@@ -231,10 +231,22 @@ pnpm test
 Тесты:
 
 - unit — аргументы, нормализация, redirect, entrypoint, таблица, JSON;
-- e2e — реальный Astro 7 fixture: build, `--dev`, `--all`, `--output`, `--version`, timeout.
+- e2e — реальный Astro fixture: build, `--dev`, `--all`, `--output`, `--version`, timeout.
 
 Fixtures: `test/fixtures/basic`, `test/fixtures/hang` и `test/fixtures/i18n`.
 
 В Windows-песочнице `node --test` и `child_process` с pipe могут падать с `EPERM`; поэтому тесты запускаются с `--test-isolation=none`, а e2e пишет stdout/stderr в файловые дескрипторы.
+
+`.npmrc` включает `node-linker=hoisted`: на Windows + Node 24 pnpm-раскладка с junction-ссылками может не резолвить транзитивный `string-width` у `cli-table3`.
+
+### CI
+
+Workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) проверяет:
+
+- Astro 5, 6 и 7;
+- Node 22 и 24;
+- Ubuntu, плюс Windows для Astro 7 / Node 24.
+
+Перед тестами CI ставит нужную версию Astro через `pnpm add -D astro@<major>`. На Astro 5 e2e-тест i18n fallback пропускается: там `fallbackRoutes` ещё не отдаются через `astro:routes:resolved`.
 
 План работ, известные ошибки и чек-листы — в [TODO.md](TODO.md).

@@ -126,14 +126,16 @@ test('e2e: --dev даёт project-маршруты, --all добавляет int
   assert.ok(allRoutes.some(r => r.route === '/_image' && r.origin === 'internal'));
 });
 
-test('e2e: i18n fallback-маршруты попадают в поле fallbacks', async () => {
-  const result = await runCli(['--root', i18n, '--json']);
-  assert.equal(result.code, 0, result.stderr);
+test(
+  'e2e: i18n fallback-маршруты попадают в поле fallbacks',
+  { skip: astroMajor < 6 ? 'Astro 5 не отдаёт fallbackRoutes через astro:routes:resolved' : false },
+  async () => {
+    const result = await runCli(['--root', i18n, '--json']);
+    assert.equal(result.code, 0, result.stderr);
 
-  const routes = JSON.parse(result.stdout);
-  assert.deepEqual(routes.map(r => r.route), ['/en', '/en/about']);
+    const routes = JSON.parse(result.stdout);
+    assert.deepEqual(routes.map(r => r.route), ['/en', '/en/about']);
 
-  if (astroMajor >= 6) {
     assert.deepEqual(routes.find(r => r.route === '/en/about').fallbacks, [
       {
         route: '/ru/about',
@@ -150,11 +152,8 @@ test('e2e: i18n fallback-маршруты попадают в поле fallbacks
         origin: 'project',
       },
     ]);
-  } else {
-    // В Astro 5 fallbackRoutes ещё не отдаются через astro:routes:resolved
-    assert.equal(routes.find(r => r.route === '/en/about').fallbacks, undefined);
   }
-});
+);
 
 test('e2e: --output без --json пишет JSON в файл', async (t) => {
   const target = path.join(
