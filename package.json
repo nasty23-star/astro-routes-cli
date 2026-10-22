@@ -39,7 +39,8 @@
     }
   },
   "scripts": {
-    "test": "node --test --test-isolation=none --test-concurrency=1 test/args.test.js test/routes.test.js test/render.test.js test/e2e.test.js"
+    "test": "node --test --test-concurrency=1 test/args.test.js test/routes.test.js test/render.test.js test/e2e.test.js",
+    "test:sandbox": "node --test --experimental-test-isolation=none --test-concurrency=1 test/args.test.js test/routes.test.js test/render.test.js test/e2e.test.js"
   },
   "dependencies": {
     "cli-table3": "^0.6.5"

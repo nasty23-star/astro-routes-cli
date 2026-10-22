@@ -17,7 +17,7 @@ CLI-утилита для получения списка маршрутов Ast
 - **Node.js 20.19+** для самого CLI.
 - **Astro 5+** в целевом проекте. Версия Node для Astro зависит от Astro: Astro 7 требует Node 20.19+ или 22.12+.
 - `astro` резолвится из целевого проекта (`--root`, по умолчанию текущий каталог), а не из зависимостей CLI.
-- Для разработки и тестов этого пакета нужен **Node 22.8+** (используется `--test-isolation=none`).
+- Для разработки и тестов этого пакета нужен **Node 22+**. В Windows-песочнице используйте `pnpm test:sandbox`.
 
 ## Установка
 
@@ -228,7 +228,8 @@ astro-routes --json --all
 
 ```bash
 pnpm install
-pnpm test
+pnpm test          # CI и обычное окружение
+pnpm test:sandbox  # Windows-песочница, где pipe/stdin дают EPERM
 ```
 
 Тесты:
@@ -238,7 +239,7 @@ pnpm test
 
 Fixtures: `test/fixtures/basic`, `test/fixtures/hang` и `test/fixtures/i18n`.
 
-В Windows-песочнице `node --test` и `child_process` с pipe могут падать с `EPERM`; поэтому тесты запускаются с `--test-isolation=none`, а e2e пишет stdout/stderr в файловые дескрипторы.
+В Windows-песочнице `node --test` и `child_process` с pipe могут падать с `EPERM`; поэтому `pnpm test:sandbox` использует `--experimental-test-isolation=none`, а e2e пишет stdout/stderr в файловые дескрипторы.
 
 `.npmrc` включает `node-linker=hoisted`: на Windows + Node 24 pnpm-раскладка с junction-ссылками может не резолвить транзитивный `string-width` у `cli-table3`.
 
