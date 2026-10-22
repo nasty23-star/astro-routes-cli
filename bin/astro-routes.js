@@ -138,12 +138,13 @@ function outputTable(data) {
 
   if (routes.length > 0) {
     const maxRouteLength = Math.max(...routes.map(r => r.route.length), 5);
+    const entryPointLength = Math.max(...routes.map(r => r.entrypoint.length), 5);
     const table = new Table({
-      head: ['ROUTE', 'TYPE', 'MODE'],
-      colWidths: [Math.min(maxRouteLength + 5, 60), 15, 10],
+      head: ['ROUTE', 'TYPE', 'MODE', 'ENTRYPOINT'],
+      colWidths: [Math.min(maxRouteLength + 5, 60), 15, 10, Math.min(entryPointLength + 15, 60)],
       style: { head: ['cyan'], border: ['grey'] },
     });
-    routes.forEach(r => table.push([r.route, r.type, r.mode]));
+    routes.forEach(r => table.push([r.route, r.type, r.mode, r.entrypoint]));
     console.log('\n📋 Найденные маршруты:\n');
     console.log(table.toString());
   }
