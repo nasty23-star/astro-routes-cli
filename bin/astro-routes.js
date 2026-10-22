@@ -1,222 +1,112 @@
 #!/usr/bin/env node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
-import Table from 'cli-table3';
-import fs from 'node:fs';
-import path from 'node:path';
-
-// ---------- Парсинг аргументов ----------
-function parseArgs(argv) {
-  const args = argv.slice(2);
-  return {
-    json: args.includes('--json'),
-    dev: args.includes('--dev'),
-    output: (() => {
-      const i = args.indexOf('--output');
-      return i !== -1 && args[i + 1] ? args[i + 1] : null;
-    })(),
-    help: args.includes('--help') || args.includes('-h'),
-  };
-}
-
-function printHelp() {
-  console.log(`
-Использование: astro-routes [опции]
-
-Опции:
-  --json              Вывести маршруты в формате JSON
-  --output <file>     Сохранить JSON в файл (используется вместе с --json)
-  --dev               Получить маршруты через dev-сервер (быстрее, без полной сборки)
-  --help, -h          Показать эту справку
-`);
-}
-
-// ---------- Преобразование pattern в читаемую строку ----------
-function patternToString(pattern) {
-  if (!pattern) return '';
-  // pattern может быть RegExp или строкой (зависит от версии Astro)
-  const raw = typeof pattern === 'string' ? pattern : pattern.toString();
-  return raw
-    .replace(/^\/\^/, '')
-    .replace(/\$\/$/, '')
-    .replace(/\\\//g, '/');
-}
-
-// NEW: извлечение информации о редиректе из маршрута
-function getRedirectInfo(route) {
-  // В Astro v5+ используется route.redirect.
-  // Для совместимости со старыми версиями проверяем и redirectRoute.
-  const redirect = route.redirect ?? route.redirectRoute;
-  if (!redirect) return null;
-
-  if (typeof redirect === 'string') {
-    return { destination: redirect, status: null };
-  }
-  return {
-    destination: redirect.destination ?? null,
-    status: redirect.status ?? null,
-  };
-}
-
-// ---------- Получение маршрутов ----------
-async function collectRoutes({ useDev, timeoutMs = 60_000 }) {
-  // Резолвим astro из целевого проекта (cwd), а не из папки инструмента
-  const require = createRequire(process.cwd() + path.sep);
-  const astroEntry = require.resolve('astro');
-  const astro = await import(pathToFileURL(astroEntry).href);
-
-  let capturedRoutes = null;
-  let resolveRoutes;
-  let rejectRoutes;
-  const routesPromise = new Promise((resolve, reject) => {
-    resolveRoutes = resolve;
-    rejectRoutes = reject;
-  });
-
-  const capture = {
-    name: 'astro-routes-capture',
-    hooks: {
-      'astro:routes:resolved': ({ routes }) => {
-        if (capturedRoutes === null) {
-          capturedRoutes = routes;
-          resolveRoutes(routes);
-        }
-      },
-    },
-  };
-
-  const timeout = setTimeout(() => {
-    rejectRoutes(new Error(
-      `Не удалось получить маршруты за ${timeoutMs} мс. ` +
-      `Возможно, хук astro:routes:resolved не сработал (изменился API Astro?).`
-    ));
-  }, timeoutMs);
-
-  let devServer = null;
-
-  try {
-    if (useDev && typeof astro.dev === 'function') {
-      // Запускаем dev-сервер; хук сработает в процессе инициализации
-      devServer = await astro.dev({
-        root: process.cwd(),
-        integrations: [capture],
-        logLevel: 'silent',
-      });
-    } else {
-      // Полная сборка; хук сработает в процессе
-      await astro.build({
-        root: process.cwd(),
-        integrations: [capture],
-        logLevel: 'silent',
-      });
-    }
-
-    // Ждём, пока хук сохранит маршруты (или сработает таймаут)
-    const routes = await routesPromise;
-    return routes;
-  } finally {
-    clearTimeout(timeout);
-    if (devServer && typeof devServer.stop === 'function') {
-      await devServer.stop().catch(() => {});
-    }
-  }
-}
-
-// ---------- Вывод ----------
-function outputJson(data, outputPath) {
-  const jsonString = JSON.stringify(data, null, 2);
-  if (outputPath) {
-    fs.writeFileSync(outputPath, jsonString, 'utf8');
-    return;
-  }
-  console.log(jsonString);
-}
-
-function outputTable(data) {
-  const routes = data.filter(r => r.type !== 'redirect'); // NEW: редиректы выводим отдельно
-  const redirects = data.filter(r => r.type === 'redirect'); // NEW
-
-  if (routes.length > 0) {
-    const maxRouteLength = Math.max(...routes.map(r => r.route.length), 5);
-    const entryPointLength = Math.max(...routes.map(r => r.entrypoint.length), 5);
-    const table = new Table({
-      head: ['ROUTE', 'TYPE', 'MODE', 'ENTRYPOINT'],
-      colWidths: [Math.min(maxRouteLength + 5, 60), 15, 10, Math.min(entryPointLength + 15, 60)],
-      style: { head: ['cyan'], border: ['grey'] },
-    });
-    routes.forEach(r => table.push([r.route, r.type, r.mode, r.entrypoint]));
-    console.log('\n📋 Найденные маршруты:\n');
-    console.log(table.toString());
-  }
-
-  // NEW: отдельный блок для редиректов
-  if (redirects.length > 0) {
-    console.log('\n↪️  Редиректы:\n');
-    redirects.forEach(r => {
-      const status = r.status ? ` (${r.status})` : '';
-      console.log(`  ${r.route} → ${r.destination}${status}`);
-    });
-  }
-
-  console.log('\n');
-}
+import { formatHelp, formatVersion, parseArgs, resolveRoot } from '../src/args.js';
+import { collectRoutes } from '../src/collect.js';
+import { formatTable, writeJson } from '../src/render.js';
+import { normalizeRoutes } from '../src/routes.js';
 
 // ---------- main ----------
 async function main() {
-  const opts = parseArgs(process.argv);
+  const rawArgs = process.argv.slice(2);
+
+  // --help/--version должны работать даже с неизвестными флагами
+  if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+    process.stdout.write(formatHelp());
+    return;
+  }
+
+  if (rawArgs.includes('--version') || rawArgs.includes('-v')) {
+    process.stdout.write(`${formatVersion()}\n`);
+    return;
+  }
+
+  let opts;
+  try {
+    opts = parseArgs(process.argv);
+  } catch (error) {
+    console.error(`Ошибка аргументов: ${error.message}`);
+    if (process.argv.includes('--verbose') && error.stack) {
+      console.error(error.stack);
+    }
+    console.error('Используйте --help для списка опций.');
+    process.exitCode = 1;
+    return;
+  }
 
   if (opts.help) {
-    printHelp();
+    process.stdout.write(formatHelp());
+    return;
+  }
+
+  if (opts.version) {
+    process.stdout.write(`${formatVersion()}\n`);
+    return;
+  }
+
+  let root;
+  try {
+    root = resolveRoot(opts.root);
+  } catch (error) {
+    console.error(error.message);
+    if (opts.verbose && error.stack) {
+      console.error(error.stack);
+    }
+    process.exitCode = 1;
     return;
   }
 
   let routes;
   try {
-    routes = await collectRoutes({ useDev: opts.dev });
+    routes = await collectRoutes({ root, timeoutMs: opts.timeout });
   } catch (e) {
+    if (e?.code === 'ASTRO_ROUTES_TIMEOUT') {
+      // build нельзя отменить снаружи — завершаем процесс принудительно
+      console.error(e.message);
+      if (opts.verbose && e.stack) {
+        console.error(e.stack);
+      }
+      process.exit(1);
+    }
     console.error('Ошибка при получении маршрутов:', e.message);
-    process.exit(1);
-  }
-
-  // NEW: включаем редиректы в фильтрацию
-  const validRoutes = (routes || []).filter(
-    r => r.type === 'page' || r.type === 'endpoint' || r.type === 'redirect'
-  );
-
-  const data = validRoutes.map(r => {
-    const base = {
-      route: patternToString(r.pattern),
-      type: r.type,
-      mode: (r.isPrerendered || r.prerender) ? 'static' : 'server',
-      entrypoint: r.entrypoint ? (r.entrypoint.pathname || r.entrypoint) : null,
-    };
-    // NEW: для редиректов добавляем destination/status и убираем entrypoint
-    if (r.type === 'redirect') {
-      const info = getRedirectInfo(r);
-      base.destination = info?.destination ?? null;
-      base.status = info?.status ?? null;
-      base.entrypoint = null;
+    if (opts.verbose && e.stack) {
+      console.error(e.stack);
     }
-    return base;
-  });
-
-  if (data.length === 0) {
-    if (opts.json) {
-      outputJson([], opts.output);
-    } else {
-      console.log('Маршруты не найдены.');
-    }
+    process.exitCode = 1;
     return;
   }
 
-  if (opts.json) {
-    outputJson(data, opts.output);
-  } else {
-    outputTable(data);
+  const data = normalizeRoutes(routes, { root, all: opts.all });
+  const useColor = Boolean(process.stdout.isTTY)
+    && !opts.noColor
+    && process.env.NO_COLOR === undefined;
+
+  try {
+    if (data.length === 0) {
+      if (opts.json) {
+        writeJson([], opts.output);
+      } else {
+        console.log('Маршруты не найдены.');
+      }
+      return;
+    }
+
+    if (opts.json) {
+      writeJson(data, opts.output);
+    } else {
+      process.stdout.write(formatTable(data, { color: useColor }));
+    }
+  } catch (error) {
+    console.error(`Не удалось записать результат: ${error.message}`);
+    if (opts.verbose && error.stack) {
+      console.error(error.stack);
+    }
+    process.exitCode = 1;
   }
 }
 
 main().catch(e => {
-  console.error('Непредвиденная ошибка:', e?.stack || e);
-  process.exit(1);
+  console.error('Непредвиденная ошибка:', e?.message ?? e);
+  if (process.argv.includes('--verbose') && e?.stack) {
+    console.error(e.stack);
+  }
+  process.exitCode = 1;
 });

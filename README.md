@@ -1,130 +1,259 @@
 # Astro Routes Inspector
 
-CLI-утилита для получения списка маршрутов (страниц и эндпоинтов) из проекта Astro без полной сборки.
+CLI-утилита для получения списка маршрутов Astro-проекта **без полной сборки**: страницы, endpoints, redirects и их режим (`static` / `server`).
 
-## Что делает
+## Возможности
 
-Скрипт запускает `astro build` с временной интеграцией, которая перехватывает хук `astro:routes:resolved`, немедленно прерывает сборку и выводит найденные маршруты в виде таблицы или JSON.
+- таблица или JSON;
+- project-маршруты по умолчанию, `--all` — вместе с internal/external;
+- `--all` — вместе с internal/external;
+- `--root` — запуск из любого каталога;
+- `--output` — атомарная запись JSON в файл;
+- `--timeout` — защита от зависшей инициализации;
+- цвета только в TTY, с поддержкой `--no-color` / `NO_COLOR`.
 
 ## Требования
 
-- Node.js с поддержкой ES-модулей и `createRequire` / `pathToFileURL` (Node 18+).
-- Проект Astro должен быть установлен в текущей рабочей директории (`cwd`), откуда запускается утилита — `astro` резолвится именно из целевого проекта.
+- **Node.js 20.19+** для самого CLI.
+- **Astro 5+** в целевом проекте. Версия Node для Astro зависит от Astro: Astro 7 требует Node 20.19+ или 22.12+.
+- `astro` резолвится из целевого проекта (`--root`, по умолчанию текущий каталог), а не из зависимостей CLI.
+- Для разработки и тестов этого пакета нужен **Node 22+**. В Windows-песочнице используйте `pnpm test:sandbox`.
 
 ## Установка
 
-1. Скопируйте скрипт в проект, сделайте исполняемым (опционально) и при необходимости добавьте в `package.json`:
+Разовый запуск:
 
 ```bash
-chmod +x routes-inspector.js
+npx astro-routes-cli --help
+# или
+pnpm dlx astro-routes-cli --help
 ```
 
-
-```json
-{
-  "scripts": {
-    "routes": "node routes-inspector.js"
-  }
-}
-```
-
-2. Убедитесь, что в `package.json` есть `"type": "module"`:
-
-   ```json
-   {
-     "type": "module"
-   }
-   ```
-
-3. Установите зависимость для вывода таблицы:
+Локально в проект:
 
 ```bash
-npm install cli-table3
+pnpm add -D astro-routes-cli
+pnpm astro-routes --json
 ```
 
----
+Глобально:
+
+```bash
+pnpm add -g astro-routes-cli
+astro-routes --help
+```
+
+Из исходников:
+
+```bash
+pnpm install
+node bin/astro-routes.js --root /path/to/astro-project
+```
 
 ## Использование
 
 Запускать из корня Astro-проекта:
 
 ```bash
-node routes-inspector.js
+astro-routes
 ```
 
-## Табличный вывод (по умолчанию)
+Либо из любого каталога:
+
+```bash
+astro-routes --root ./apps/web
+```
+
+Если `--root` не указан, CLI ищет ближайший `astro.config.*` или `package.json` с зависимостью `astro` вверх по дереву и использует этот каталог.
+
+### Опции
+
+| Опция | Алиас | По умолчанию | Описание |
+|---|---|---|---|
+| `--json` | `-j` | выкл | Вывести JSON |
+| `--output <file>` | `-o` | — | Записать JSON в файл; неявно включает `--json`; `-` — stdout |
+| `--root <dir>` | `-r` | cwd / ближайший Astro-проект | Корень Astro-проекта |
+| `--timeout <ms>` | `-t` | `60000` | Таймаут получения маршрутов |
+| `--all` | — | выкл | Показать также `internal`/`external` маршруты |
+| `--no-color` | — | выкл | Отключить цвета в таблице |
+| `--verbose` | — | выкл | Показывать stack trace при ошибках |
+| `--version` | `-v` | — | Показать версию |
+| `--help` | `-h` | — | Показать справку |
+
+`--output` пишет файл относительно текущего каталога, а не `--root`. Родительский каталог должен существовать.
+
+## Примеры
+
+### Таблица
+
+```bash
+astro-routes
+```
 
 ```text
-📋 Найденные маршруты:
+📋 Найденные маршруты (6):
 
-┌───────────────┬──────────┬────────┐
-│ ROUTE         │ TYPE     │ MODE   │
-├───────────────┼──────────┼────────┤
-│ /             │ page     │ static │
-│ /blog/[slug]  │ page     │ server │
-│ /api/health   │ endpoint │ server │
-└───────────────┴──────────┴────────┘
+┌──────────────┬──────────┬────────┬─────────────────────────────┐
+│ ROUTE        │ TYPE     │ MODE   │ ENTRYPOINT                  │
+├──────────────┼──────────┼────────┼─────────────────────────────┤
+│ /            │ page     │ static │ src/pages/index.astro       │
+│ /about       │ page     │ static │ src/pages/about.astro       │
+│ /api/health  │ endpoint │ server │ src/pages/api/health.ts     │
+│ /blog/[slug] │ page     │ static │ src/pages/blog/[slug].astro │
+└──────────────┴──────────┴────────┴─────────────────────────────┘
+
+↪️  Редиректы:
+
+  /old → /new (301)
+
+Итого: 6 — page: 3, endpoint: 1, redirect: 2
 ```
 
-## JSON-вывод
+В таблице длинные `route`, `entrypoint`, redirects и fallback-маршруты обрезаются с `…`; полные значения есть в JSON.
+
+### JSON
 
 ```bash
-node routes-inspector.js --json
+astro-routes --json
 ```
-
-## Сохранение JSON в файл
-
-```bash
-node routes-inspector.mjs --json --output routes.json
-```
-
-## Формат данных
-
-Каждый маршрут описывается объектом:
-
-
-| Поле         | Описание                                                        |
-|--------------|-----------------------------------------------------------------|
-| `route`      | Путь маршрута (regex-паттерн очищается до читаемого вида)       |
-| `type`       | `page` или `endpoint`                                           |
-| `mode`       | `static` (пререндерится) или `server` (SSR)                     |
-| `entrypoint` | Путь к файлу-точке входа маршрута либо `null`                   |
-
-Пример:
 
 ```json
 [
   {
     "route": "/blog/[slug]",
     "type": "page",
-    "mode": "server",
-    "entrypoint": "/src/pages/blog/[slug].astro"
+    "mode": "static",
+    "entrypoint": "src/pages/blog/[slug].astro",
+    "origin": "project"
+  },
+  {
+    "route": "/old",
+    "type": "redirect",
+    "mode": "static",
+    "entrypoint": null,
+    "origin": "project",
+    "destination": "/new",
+    "status": 301
   }
 ]
 ```
 
+### JSON в файл
+
+```bash
+astro-routes --output routes.json
+```
+
+Файл пишется атомарно: сначала во временный файл рядом, затем `rename`. В конце добавляется `\n`.
+
+### Internal-маршруты
+
+```bash
+astro-routes --json --all
+```
+
+Внутренние маршруты Astro (`/_image`, `/_server-islands`, `/404`) и injected-маршруты интеграций по умолчанию скрыты; `--all` показывает их с соответствующим `"origin"`.
+
+### i18n fallback
+
+Если в Astro настроен `i18n.fallback`, fallback-маршруты не дублируются в общем списке, а добавляются к исходному маршруту полем `fallbacks`:
+
+```json
+{
+  "route": "/en/about",
+  "type": "page",
+  "mode": "static",
+  "entrypoint": "src/pages/en/about.astro",
+  "origin": "project",
+  "fallbacks": [
+    {
+      "route": "/ru/about",
+      "type": "fallback",
+      "mode": "static",
+      "origin": "project"
+    }
+  ]
+}
+```
+
+В таблице они выводятся отдельным блоком `↳ Fallback-маршруты`, а в summary добавляется `(+N fallback)`. Одинаковые пути и fallback-маршруты других origin по умолчанию отбрасываются; `--all` включает и их.
+
+В Astro 5 `fallbackRoutes` ещё не отдаются через `astro:routes:resolved`, поэтому поле `fallbacks` там отсутствует. Полноценная поддержка — Astro 6+.
+
+## Формат данных
+
+| Поле | Описание |
+|---|---|
+| `route` | Читаемый путь маршрута (`/blog/[slug]`), не RegExp |
+| `type` | `page`, `endpoint` или `redirect` |
+| `mode` | `static` (пререндерится) или `server` (SSR) |
+| `entrypoint` | Путь к файлу относительно корня проекта; `null` для redirect |
+| `origin` | `project`, `internal` или `external` |
+| `destination` | Только для redirect: куда ведёт |
+| `status` | Только для redirect: HTTP-статус; для строкового redirect — `301` |
+| `fallbacks` | Необязательный массив i18n fallback-маршрутов: `route`, `type`, `mode`, `origin` |
+
+Маршруты сортируются по `route`, затем по `type`.
+
 ## Как это работает
 
-`createRequire(process.cwd() + '/')` — резолвит astro из целевого проекта, а не из папки утилиты.
+1. CLI резолвит `astro` из `--root` через `createRequire(path.join(root, 'package.json'))`.
+2. Запускается `astro.build()` с временной интеграцией `astro-routes-capture`.
+3. В хуке `astro:routes:resolved` интеграция бросает `RoutesCaptured` с кодом `ASTRO_ROUTES_CAPTURED`.
+4. CLI ловит **только** эту ошибку и возвращает маршруты. Сборка прерывается до `content sync`, `astro:build:start` и `astro:build:done`; `dist` не создаётся.
 
-Запускается `build()` с интеграцией `astro-routes-capture`.
+Важно:
 
-В хуке `astro:routes:resolved` маршруты сохраняются в `globalThis.__routes`, после чего бросается `StopBuild` — сборка прерывается.
+- `astro:config:setup` пользовательских интеграций всё равно выполняется — это часть загрузки конфига.
+- `astro:config:done` и `astro:build:*` **не** выполняются. Для инспектора это осознанное поведение.
+- Inline-интеграция добавляется после пользовательских, поэтому их `astro:routes:resolved` успевают выполниться.
+- CLI выставляет `ASTRO_TELEMETRY_DISABLED=1`, если переменная не задана: инспектор не должен отправлять telemetry.
 
-Из полученного списка отбираются только `page` и `endpoint`.
+## Таймаут
 
-Результат выводится таблицей `(cli-table3)` или `JSON`.
+`--timeout` ограничивает получение маршрутов. Реализация — `Promise.race`; при срабатывании CLI печатает сообщение и завершается с кодом 1, потому что `astro.build()` нельзя отменить снаружи.
 
-### Обработка ошибок
+Ограничение: таймер не может прервать синхронный импорт/парсинг модулей Astro. Для жёсткого лимита нужен дочерний процесс.
 
-Если сборка падает с ошибкой, отличной от `StopBuild`, выводится сообщение `Ошибка` при получении маршрутов: ... и процесс завершается с кодом 1.
+## Ошибки и коды выхода
 
-Если маршруты не найдены: в режиме `--json` печатается [], иначе — `Маршруты не найдены`.
+- `0` — успех, в том числе пустой список маршрутов.
+- `1` — ошибка аргументов, `astro` не найден, ошибка записи файла, таймаут или ошибка Astro.
 
-### Зависимости
+С `--verbose` при ошибке дополнительно печатается stack trace.
 
-`cli-table3` — вывод таблицы.
+Если маршрутов нет: в `--json` печатается `[]`, в таблице — `Маршруты не найдены.`
 
-`fs` — встроенный модуль Node.js для записи файла.
+## Разработка
 
-`astro` — резолвится из целевого проекта.
+```bash
+pnpm install
+pnpm test          # CI и обычное окружение
+pnpm test:sandbox  # Windows-песочница, где pipe/stdin дают EPERM
+```
+
+Тесты:
+
+- unit — аргументы, нормализация, redirect, entrypoint, таблица, JSON;
+- e2e — реальный Astro fixture: build, `--all`, `--output`, `--version`, timeout.
+
+Fixtures: `test/fixtures/basic`, `test/fixtures/hang` и `test/fixtures/i18n`.
+
+В Windows-песочнице `node --test` и `child_process` с pipe могут падать с `EPERM`; поэтому `pnpm test:sandbox` использует `--experimental-test-isolation=none`, а e2e пишет stdout/stderr в файловые дескрипторы.
+
+`.npmrc` включает `node-linker=hoisted`: на Windows + Node 24 pnpm-раскладка с junction-ссылками может не резолвить транзитивный `string-width` у `cli-table3`.
+
+### CI
+
+Workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) проверяет:
+
+- Ubuntu + Node 22 + Astro 5, 6, 7;
+- Windows + Node 24 + Astro 7.
+
+Перед тестами CI ставит нужную версию Astro через `pnpm add -D astro@<major>`. На Astro 5 e2e-тест i18n fallback пропускается: там `fallbackRoutes` ещё не отдаются через `astro:routes:resolved`.
+
+Node 18/20 и macOS в обычный CI не входят, чтобы не раздувать матрицу.
+
+## Лицензия
+
+ISC. См. [LICENSE](LICENSE).

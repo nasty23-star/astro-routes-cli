@@ -7,7 +7,8 @@
     "astro-routes": "./bin/astro-routes.js"
   },
   "files": [
-    "bin"
+    "bin",
+    "src"
   ],
   "keywords": [
     "astro",
@@ -15,16 +16,36 @@
     "routes",
     "astro-routes"
   ],
-  "author": "",
+  "author": "Anastasia Yarosh <yaroshnastassia@yandex.ru>",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nasty23-star/astro-routes-cli.git"
+  },
+  "homepage": "https://github.com/nasty23-star/astro-routes-cli#readme",
+  "bugs": {
+    "url": "https://github.com/nasty23-star/astro-routes-cli/issues"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
   "packageManager": "pnpm@10.34.3",
   "peerDependencies": {
     "astro": ">=5.0.0"
   },
+  "peerDependenciesMeta": {
+    "astro": {
+      "optional": true
+    }
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test --test-concurrency=1 test/args.test.js test/routes.test.js test/render.test.js test/e2e.test.js",
+    "test:sandbox": "node --test --experimental-test-isolation=none --test-concurrency=1 test/args.test.js test/routes.test.js test/render.test.js test/e2e.test.js"
   },
   "dependencies": {
     "cli-table3": "^0.6.5"
+  },
+  "devDependencies": {
+    "astro": "^7.4.2"
   }
 }

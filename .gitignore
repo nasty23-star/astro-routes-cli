@@ -1,1 +1,9 @@
 node_modules
+.pnpm-store
+dist
+.astro
+test/fixtures/**/routes-hook.json
+test/fixtures/**/build-start.txt
+test/fixtures/**/build-done.txt
+
+TODO.md
