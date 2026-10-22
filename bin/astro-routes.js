@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-
-import { build } from 'astro';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import Table from 'cli-table3';
 import fs from 'fs';
+
+// Резолвим astro из целевого проекта (cwd), а не из папки инструмента
+const require = createRequire(process.cwd() + '/');
+const astroEntry = require.resolve('astro');
+const { build } = await import(pathToFileURL(astroEntry).href);
 
 class StopBuild extends Error {}
 
