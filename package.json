@@ -1,0 +1,27 @@
+{
+  "name": "astro-routes-cli",
+  "version": "1.0.0",
+  "description": "A CLI to list all Astro routes without a full build",
+  "type": "module",
+  "bin": {
+    "astro-routes": "./bin/astro-routes.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "keywords": [
+    "astro",
+    "cli",
+    "routes",
+    "astro-routes"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.34.3",
+  "peerDependencies": {
+    "astro": ">=5.0.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
