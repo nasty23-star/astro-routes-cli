@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs as nodeParseArgs } from 'node:util';
 import Table from 'cli-table3';
 import fs from 'node:fs';
@@ -86,31 +86,45 @@ function printHelp() {
 `);
 }
 
-// ---------- Преобразование pattern в читаемую строку ----------
-function patternToString(pattern) {
-  if (!pattern) return '';
-  // pattern может быть RegExp или строкой (зависит от версии Astro)
-  const raw = typeof pattern === 'string' ? pattern : pattern.toString();
-  return raw
-    .replace(/^\/\^/, '')
-    .replace(/\$\/$/, '')
-    .replace(/\\\//g, '/');
+// ---------- Нормализация маршрута ----------
+// В Astro 5+ IntegrationResolvedRoute.pattern — уже готовая строка маршрута.
+// RegExp-ветка оставлена только как защита от нестандартных/старых данных.
+function routePath(route) {
+  if (typeof route.pattern === 'string') return route.pattern;
+  return String(route.pattern ?? '');
 }
 
-// NEW: извлечение информации о редиректе из маршрута
+function entrypointPath(entrypoint, root) {
+  if (entrypoint == null) return null;
+
+  const value = entrypoint instanceof URL
+    ? fileURLToPath(entrypoint)
+    : String(entrypoint);
+
+  const relative = path.isAbsolute(value) ? path.relative(root, value) : value;
+  return relative.split(path.sep).join('/');
+}
+
+// Для строкового redirect Astro по умолчанию отдаёт 301.
 function getRedirectInfo(route) {
-  // В Astro v5+ используется route.redirect.
-  // Для совместимости со старыми версиями проверяем и redirectRoute.
-  const redirect = route.redirect ?? route.redirectRoute;
-  if (!redirect) return null;
+  const redirect = route.redirect;
 
   if (typeof redirect === 'string') {
-    return { destination: redirect, status: null };
+    return { destination: redirect, status: 301 };
   }
-  return {
-    destination: redirect.destination ?? null,
-    status: redirect.status ?? null,
-  };
+
+  if (redirect && typeof redirect === 'object') {
+    return {
+      destination: redirect.destination ?? null,
+      status: redirect.status ?? 301,
+    };
+  }
+
+  if (route.redirectRoute?.pattern) {
+    return { destination: route.redirectRoute.pattern, status: 301 };
+  }
+
+  return null;
 }
 
 // ---------- Получение маршрутов ----------
@@ -234,7 +248,7 @@ function outputTable(data, { color = false } = {}) {
     const table = new Table({
       head: ['ROUTE', 'TYPE', 'MODE', 'ENTRYPOINT'],
       colWidths: [Math.min(maxRouteLength + 5, 60), 15, 10, Math.min(entryPointLength + 15, 60)],
-      style: color ? { head: ['cyan'], border: ['grey'] } : {},
+      style: color ? { head: ['cyan'], border: ['grey'] } : { head: [], border: [] },
     });
     routes.forEach(r => table.push([r.route, r.type, r.mode, r.entrypoint]));
     console.log('\n📋 Найденные маршруты:\n');
@@ -307,12 +321,13 @@ async function main() {
 
   const data = validRoutes.map(r => {
     const base = {
-      route: patternToString(r.pattern),
+      route: routePath(r),
       type: r.type,
-      mode: (r.isPrerendered || r.prerender) ? 'static' : 'server',
-      entrypoint: r.entrypoint ? (r.entrypoint.pathname || r.entrypoint) : null,
+      mode: (r.isPrerendered ?? r.prerender) ? 'static' : 'server',
+      entrypoint: entrypointPath(r.entrypoint, root),
+      origin: r.origin ?? 'project',
     };
-    // NEW: для редиректов добавляем destination/status и убираем entrypoint
+    // Для редиректов добавляем destination/status и убираем entrypoint
     if (r.type === 'redirect') {
       const info = getRedirectInfo(r);
       base.destination = info?.destination ?? null;
@@ -321,6 +336,8 @@ async function main() {
     }
     return base;
   });
+
+  data.sort((a, b) => a.route.localeCompare(b.route) || a.type.localeCompare(b.type));
 
   const useColor = Boolean(process.stdout.isTTY)
     && !opts.noColor
