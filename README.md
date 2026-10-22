@@ -1,21 +1,130 @@
-# astro-routes-cli
+# Astro Routes Inspector
 
-List all Astro routes from the CLI without a full build.
+CLI-утилита для получения списка маршрутов (страниц и эндпоинтов) из проекта Astro без полной сборки.
 
-[![npm version](https://img.shields.io/npm/v/astro-routes-cli.svg)](https://www.npmjs.com/package/astro-routes-cli)
-[![license](https://img.shields.io/npm/l/astro-routes-cli.svg)](https://github.com/yourname/astro-routes-cli/blob/main/LICENSE)
+## Что делает
 
-## Why
+Скрипт запускает `astro build` с временной интеграцией, которая перехватывает хук `astro:routes:resolved`, немедленно прерывает сборку и выводит найденные маршруты в виде таблицы или JSON.
 
-Astro doesn't have a built-in command to list routes. You can run `astro build`, but it does a full build and takes 30–60 seconds. You can open the dev toolbar, but it only works in the browser during `astro dev`.
+## Требования
 
-This CLI gives you a quick, scriptable way to see every route in your project — pages, endpoints, redirects, and routes injected by integrations — in 2–5 seconds.
+- Node.js с поддержкой ES-модулей и `createRequire` / `pathToFileURL` (Node 18+).
+- Проект Astro должен быть установлен в текущей рабочей директории (`cwd`), откуда запускается утилита — `astro` резолвится именно из целевого проекта.
 
-## Install
+## Установка
+
+1. Скопируйте скрипт в проект, сделайте исполняемым (опционально) и при необходимости добавьте в `package.json`:
 
 ```bash
-# Global
-pnpm add -g astro-routes-cli
+chmod +x routes-inspector.js
+```
 
-# Or run once without installing
-pnpm dlx astro-routes-cli
+
+```json
+{
+  "scripts": {
+    "routes": "node routes-inspector.js"
+  }
+}
+```
+
+2. Убедитесь, что в `package.json` есть `"type": "module"`:
+
+   ```json
+   {
+     "type": "module"
+   }
+   ```
+
+3. Установите зависимость для вывода таблицы:
+
+```bash
+npm install cli-table3
+```
+
+---
+
+## Использование
+
+Запускать из корня Astro-проекта:
+
+```bash
+node routes-inspector.js
+```
+
+## Табличный вывод (по умолчанию)
+
+```text
+📋 Найденные маршруты:
+
+┌───────────────┬──────────┬────────┐
+│ ROUTE         │ TYPE     │ MODE   │
+├───────────────┼──────────┼────────┤
+│ /             │ page     │ static │
+│ /blog/[slug]  │ page     │ server │
+│ /api/health   │ endpoint │ server │
+└───────────────┴──────────┴────────┘
+```
+
+## JSON-вывод
+
+```bash
+node routes-inspector.js --json
+```
+
+## Сохранение JSON в файл
+
+```bash
+node routes-inspector.mjs --json --output routes.json
+```
+
+## Формат данных
+
+Каждый маршрут описывается объектом:
+
+
+| Поле         | Описание                                                        |
+|--------------|-----------------------------------------------------------------|
+| `route`      | Путь маршрута (regex-паттерн очищается до читаемого вида)       |
+| `type`       | `page` или `endpoint`                                           |
+| `mode`       | `static` (пререндерится) или `server` (SSR)                     |
+| `entrypoint` | Путь к файлу-точке входа маршрута либо `null`                   |
+
+Пример:
+
+```json
+[
+  {
+    "route": "/blog/[slug]",
+    "type": "page",
+    "mode": "server",
+    "entrypoint": "/src/pages/blog/[slug].astro"
+  }
+]
+```
+
+## Как это работает
+
+`createRequire(process.cwd() + '/')` — резолвит astro из целевого проекта, а не из папки утилиты.
+
+Запускается `build()` с интеграцией `astro-routes-capture`.
+
+В хуке `astro:routes:resolved` маршруты сохраняются в `globalThis.__routes`, после чего бросается `StopBuild` — сборка прерывается.
+
+Из полученного списка отбираются только `page` и `endpoint`.
+
+Результат выводится таблицей `(cli-table3)` или `JSON`.
+
+### Обработка ошибок
+
+Если сборка падает с ошибкой, отличной от `StopBuild`, выводится сообщение `Ошибка` при получении маршрутов: ... и процесс завершается с кодом 1.
+
+Если маршруты не найдены: в режиме `--json` печатается [], иначе — `Маршруты не найдены`.
+
+### Зависимости
+
+`cli-table3` — вывод таблицы.
+
+`fs` — встроенный модуль Node.js для записи файла.
+
+`astro` — резолвится из целевого проекта.
