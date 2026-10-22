@@ -9,7 +9,6 @@ export function parseArgs(argv) {
     args: argv.slice(2),
     options: {
       json: { type: 'boolean', short: 'j' },
-      dev: { type: 'boolean' },
       all: { type: 'boolean' },
       output: { type: 'string', short: 'o' },
       root: { type: 'string', short: 'r' },
@@ -38,7 +37,6 @@ export function parseArgs(argv) {
   return {
     // --output неявно включает JSON: иначе файл молча не создавался бы
     json: Boolean(values.json) || values.output !== undefined,
-    dev: Boolean(values.dev),
     all: Boolean(values.all),
     output: values.output ?? null,
     root: values.root ?? null,
@@ -50,8 +48,54 @@ export function parseArgs(argv) {
   };
 }
 
+const ASTRO_CONFIG_NAMES = [
+  'astro.config.mjs',
+  'astro.config.js',
+  'astro.config.cjs',
+  'astro.config.ts',
+  'astro.config.mts',
+  'astro.config.cts',
+];
+
+function hasAstroDependency(dir) {
+  const packagePath = path.join(dir, 'package.json');
+  if (!fs.existsSync(packagePath)) return false;
+
+  try {
+    const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+    return Boolean(
+      pkg.dependencies?.astro ||
+      pkg.devDependencies?.astro ||
+      pkg.peerDependencies?.astro
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function findAstroRoot(startDir = process.cwd()) {
+  let dir = path.resolve(startDir);
+
+  while (true) {
+    if (ASTRO_CONFIG_NAMES.some(name => fs.existsSync(path.join(dir, name)))) {
+      return dir;
+    }
+    if (hasAstroDependency(dir)) {
+      return dir;
+    }
+
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
 export function resolveRoot(rootArg) {
-  const root = path.resolve(rootArg ?? process.cwd());
+  const explicit = rootArg != null;
+  const root = explicit
+    ? path.resolve(rootArg)
+    : (findAstroRoot(process.cwd()) ?? path.resolve(process.cwd()));
+
   const stat = fs.statSync(root, { throwIfNoEntry: false });
   if (!stat || !stat.isDirectory()) {
     throw new Error(`Каталог не найден: ${root}`);
@@ -73,9 +117,8 @@ export function formatHelp() {
 Опции:
   -j, --json              Вывести маршруты в формате JSON
   -o, --output <file>     Сохранить JSON в файл (включает --json)
-  -r, --root <dir>        Корень Astro-проекта (по умолчанию текущий каталог)
+  -r, --root <dir>        Корень Astro-проекта (по умолчанию cwd или ближайший Astro-проект вверх)
   -t, --timeout <ms>      Таймаут получения маршрутов (по умолчанию 60000)
-      --dev               Получить маршруты через dev-сервер
       --all               Показать также internal/external маршруты
       --no-color          Отключить цвета в таблице
       --verbose           Показывать stack trace при ошибках

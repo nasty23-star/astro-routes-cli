@@ -6,6 +6,19 @@ import { normalizeRoutes } from '../src/routes.js';
 
 // ---------- main ----------
 async function main() {
+  const rawArgs = process.argv.slice(2);
+
+  // --help/--version должны работать даже с неизвестными флагами
+  if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+    process.stdout.write(formatHelp());
+    return;
+  }
+
+  if (rawArgs.includes('--version') || rawArgs.includes('-v')) {
+    process.stdout.write(`${formatVersion()}\n`);
+    return;
+  }
+
   let opts;
   try {
     opts = parseArgs(process.argv);
@@ -43,10 +56,10 @@ async function main() {
 
   let routes;
   try {
-    routes = await collectRoutes({ root, useDev: opts.dev, timeoutMs: opts.timeout });
+    routes = await collectRoutes({ root, timeoutMs: opts.timeout });
   } catch (e) {
     if (e?.code === 'ASTRO_ROUTES_TIMEOUT') {
-      // build/dev нельзя отменить снаружи — завершаем процесс принудительно
+      // build нельзя отменить снаружи — завершаем процесс принудительно
       console.error(e.message);
       if (opts.verbose && e.stack) {
         console.error(e.stack);
@@ -79,7 +92,7 @@ async function main() {
     if (opts.json) {
       writeJson(data, opts.output);
     } else {
-      process.stdout.write(await formatTable(data, { color: useColor }));
+      process.stdout.write(formatTable(data, { color: useColor }));
     }
   } catch (error) {
     console.error(`Не удалось записать результат: ${error.message}`);

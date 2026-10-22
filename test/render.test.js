@@ -54,8 +54,8 @@ const data = [
   },
 ];
 
-test('formatTable: summary, ORIGIN, null entrypoint и redirect status', async () => {
-  const text = await formatTable(data, { columns: 80 });
+test('formatTable: summary, ORIGIN, null entrypoint и redirect status', () => {
+  const text = formatTable(data, { columns: 80 });
 
   assert.ok(!text.includes('\u001b['), 'в таблице не должно быть ANSI');
   assert.match(text, /Итого: 5/);
@@ -71,7 +71,7 @@ test('formatTable: summary, ORIGIN, null entrypoint и redirect status', async (
   }
 });
 
-test('formatTable: длинные значения обрезаются, таблица влезает в 100 колонок', async () => {
+test('formatTable: длинные значения обрезаются, таблица влезает в 100 колонок', () => {
   const longData = [
     {
       route: `/${'very-long-route/'.repeat(5)}`,
@@ -82,7 +82,7 @@ test('formatTable: длинные значения обрезаются, таб�
     },
   ];
 
-  const text = await formatTable(longData, { columns: 100 });
+  const text = formatTable(longData, { columns: 100 });
 
   assert.match(text, /…/);
   for (const line of text.split('\n')) {
@@ -90,8 +90,47 @@ test('formatTable: длинные значения обрезаются, таб�
   }
 });
 
-test('formatTable: пустой список не падает', async () => {
-  const text = await formatTable([], { columns: 80 });
+test('formatTable: 60 колонок и длинные fallback/redirect обрезаются', () => {
+  const longPath = `/${'very-long-segment/'.repeat(8)}`;
+  const narrowData = [
+    {
+      route: `/${'route/'.repeat(10)}`,
+      type: 'page',
+      mode: 'static',
+      entrypoint: `src/${'path/'.repeat(10)}index.astro`,
+      origin: 'internal',
+      fallbacks: [
+        {
+          route: `/ru/${'fallback/'.repeat(10)}`,
+          type: 'fallback',
+          mode: 'static',
+          origin: 'project',
+        },
+      ],
+    },
+    {
+      route: '/old',
+      type: 'redirect',
+      mode: 'static',
+      entrypoint: null,
+      origin: 'project',
+      destination: longPath,
+      status: 301,
+    },
+  ];
+
+  const text = formatTable(narrowData, { columns: 60 });
+
+  for (const line of text.split('\n')) {
+    assert.ok(line.length <= 60, `строка длиннее 60 колонок (${line.length}): ${line}`);
+  }
+  assert.match(text, /…/);
+  assert.match(text, /↪️  Редиректы/);
+  assert.match(text, /↳ Fallback-маршруты/);
+});
+
+test('formatTable: пустой список не падает', () => {
+  const text = formatTable([], { columns: 80 });
   assert.match(text, /Итого: 0/);
 });
 

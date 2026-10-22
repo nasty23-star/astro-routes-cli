@@ -2,7 +2,11 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-// Собственная ошибка-сигнал: прерывает build/dev сразу после того,
+// Инспектор не должен отправлять telemetry Astro: это лишний side effect,
+// а в песочницах запись в %APPDATA%\astro может падать с EPERM.
+process.env.ASTRO_TELEMETRY_DISABLED ??= '1';
+
+// Собственная ошибка-сигнал: прерывает build сразу после того,
 // как Astro собрал манифест маршрутов, не давая сборке продолжиться.
 export class RoutesCaptured extends Error {
   constructor(routes) {
@@ -13,7 +17,7 @@ export class RoutesCaptured extends Error {
   }
 }
 
-// Отдельная ошибка таймаута: Astro build/dev нельзя отменить снаружи,
+// Отдельная ошибка таймаута: Astro build нельзя отменить снаружи,
 // поэтому main завершит процесс после сообщения.
 export class RoutesTimeoutError extends Error {
   constructor(timeoutMs) {
@@ -27,7 +31,7 @@ export class RoutesTimeoutError extends Error {
   }
 }
 
-export async function collectRoutes({ root, useDev, timeoutMs = 60_000 }) {
+export async function collectRoutes({ root, timeoutMs = 60_000 }) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new RoutesTimeoutError(timeoutMs)), timeoutMs);
@@ -61,24 +65,13 @@ export async function collectRoutes({ root, useDev, timeoutMs = 60_000 }) {
       },
     };
 
-    let devServer = null;
-
     try {
-      if (useDev && typeof astro.dev === 'function') {
-        // Прерываем инициализацию dev-сервера сразу после route discovery
-        devServer = await astro.dev({
-          root,
-          integrations: [capture],
-          logLevel: 'silent',
-        });
-      } else {
-        // Прерываем build до content sync и build:start
-        await astro.build({
-          root,
-          integrations: [capture],
-          logLevel: 'silent',
-        });
-      }
+      // Прерываем build до content sync и build:start
+      await astro.build({
+        root,
+        integrations: [capture],
+        logLevel: 'silent',
+      });
 
       return capturedRoutes ?? [];
     } catch (error) {
@@ -86,10 +79,6 @@ export async function collectRoutes({ root, useDev, timeoutMs = 60_000 }) {
         return error.routes ?? capturedRoutes ?? [];
       }
       throw error;
-    } finally {
-      if (devServer && typeof devServer.stop === 'function') {
-        await devServer.stop().catch(() => {});
-      }
     }
   })();
 

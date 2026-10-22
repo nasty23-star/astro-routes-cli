@@ -30,12 +30,19 @@ function cleanFixture(dir) {
   }
 }
 
-function runCli(args, { cwd = repoRoot, timeout = 120_000 } = {}) {
+function runCli(args, { cwd = repoRoot, timeout = 120_000, unsetTelemetry = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astro-routes-e2e-'));
   const stdoutPath = path.join(dir, 'stdout.log');
   const stderrPath = path.join(dir, 'stderr.log');
   const stdoutFd = fs.openSync(stdoutPath, 'w');
   const stderrFd = fs.openSync(stderrPath, 'w');
+  const childEnv = { ...process.env, NO_COLOR: '1' };
+
+  if (unsetTelemetry) {
+    delete childEnv.ASTRO_TELEMETRY_DISABLED;
+  } else {
+    childEnv.ASTRO_TELEMETRY_DISABLED = '1';
+  }
 
   return new Promise(resolve => {
     let settled = false;
@@ -43,7 +50,7 @@ function runCli(args, { cwd = repoRoot, timeout = 120_000 } = {}) {
 
     const child = spawn(process.execPath, [cli, ...args], {
       cwd,
-      env: { ...process.env, ASTRO_TELEMETRY_DISABLED: '1', NO_COLOR: '1' },
+      env: childEnv,
       // Файловые дескрипторы вместо pipe: в песочнице Windows pipe может дать EPERM
       stdio: ['ignore', stdoutFd, stderrFd],
     });
@@ -112,20 +119,6 @@ test('e2e: build прерывается и отдаёт отсортирован
   assert.equal(fs.existsSync(path.join(basic, 'build-done.txt')), false);
 });
 
-test('e2e: --dev даёт project-маршруты, --all добавляет internal', async () => {
-  const project = await runCli(['--root', basic, '--dev', '--json']);
-  assert.equal(project.code, 0, project.stderr);
-  const projectRoutes = JSON.parse(project.stdout);
-  assert.equal(projectRoutes.length, 6);
-  assert.ok(!projectRoutes.some(r => r.route === '/_image'));
-
-  const all = await runCli(['--root', basic, '--dev', '--json', '--all']);
-  assert.equal(all.code, 0, all.stderr);
-  const allRoutes = JSON.parse(all.stdout);
-  assert.equal(allRoutes.length, 9);
-  assert.ok(allRoutes.some(r => r.route === '/_image' && r.origin === 'internal'));
-});
-
 test(
   'e2e: i18n fallback-маршруты попадают в поле fallbacks',
   { skip: astroMajor < 6 ? 'Astro 5 не отдаёт fallbackRoutes через astro:routes:resolved' : false },
@@ -172,6 +165,29 @@ test('e2e: --output без --json пишет JSON в файл', async (t) => {
   assert.equal(routes.length, 6);
 });
 
+test('e2e: CLI сам отключает Astro telemetry', async () => {
+  const result = await runCli(
+    ['--root', basic, '--json'],
+    { unsetTelemetry: true }
+  );
+
+  assert.equal(result.code, 0, result.stderr);
+  const routes = JSON.parse(result.stdout);
+  assert.equal(routes.length, 6);
+});
+
+test('e2e: без --root находит Astro-проект вверх по дереву', async () => {
+  const result = await runCli(
+    ['--json'],
+    { cwd: path.join(basic, 'src', 'pages') }
+  );
+
+  assert.equal(result.code, 0, result.stderr);
+  const routes = JSON.parse(result.stdout);
+  assert.equal(routes.length, 6);
+  assert.equal(routes[0].route, '/');
+});
+
 test('e2e: --version и --help не запускают Astro', async () => {
   const version = await runCli(['--version']);
   assert.equal(version.code, 0, version.stderr);
@@ -181,6 +197,14 @@ test('e2e: --version и --help не запускают Astro', async () => {
   assert.equal(help.code, 0, help.stderr);
   assert.match(help.stdout, /--root/);
   assert.match(help.stdout, /--no-color/);
+
+  const helpWithUnknown = await runCli(['--help', '--unknown']);
+  assert.equal(helpWithUnknown.code, 0);
+  assert.match(helpWithUnknown.stdout, /Использование/);
+
+  const versionWithUnknown = await runCli(['--version', '--unknown']);
+  assert.equal(versionWithUnknown.code, 0);
+  assert.match(versionWithUnknown.stdout, /astro-routes-cli \d+\.\d+\.\d+/);
 });
 
 test('e2e: неизвестный флаг и неверный --timeout дают exit 1', async () => {

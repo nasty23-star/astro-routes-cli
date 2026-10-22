@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import Table from 'cli-table3';
 
 export function formatJson(data) {
   return `${JSON.stringify(data, null, 2)}\n`;
@@ -33,23 +34,27 @@ export function writeJson(data, outputPath, { stdout = process.stdout } = {}) {
   }
 }
 
-export async function formatTable(data, { color = false, columns } = {}) {
-  // Тяжёлый CJS-пакет грузим только когда реально нужна таблица
-  const { default: Table } = await import('cli-table3');
+function truncateLine(text, maxLength) {
+  if (text.length <= maxLength) return text;
+  if (maxLength <= 1) return '…';
+  return `${text.slice(0, maxLength - 1)}…`;
+}
+
+export function formatTable(data, { color = false, columns } = {}) {
   const routes = data.filter(r => r.type !== 'redirect');
   const redirects = data.filter(r => r.type === 'redirect');
   const chunks = [];
+  const terminalWidth = Math.max(columns || process.stdout.columns || 100, 55);
 
   if (routes.length > 0) {
     const showOrigin = routes.some(r => r.origin && r.origin !== 'project');
-    const terminalWidth = Math.max(columns || process.stdout.columns || 100, 60);
     const columnCount = showOrigin ? 5 : 4;
     // cli-table3 добавляет рамки/паддинги сверх суммы colWidths
-    const available = Math.max(terminalWidth - columnCount - 2, 40);
+    const available = Math.max(terminalWidth - columnCount - 2, 30);
     const typeWidth = 10;
     const modeWidth = 8;
     const originWidth = showOrigin ? 10 : 0;
-    const remaining = Math.max(available - typeWidth - modeWidth - originWidth, 30);
+    const remaining = Math.max(available - typeWidth - modeWidth - originWidth, 20);
 
     const maxRouteLength = Math.max(
       ...routes.map(r => r.route.length),
@@ -61,14 +66,14 @@ export async function formatTable(data, { color = false, columns } = {}) {
     );
 
     let routeWidth = Math.min(
-      Math.max(maxRouteLength + 2, 12),
-      Math.max(12, Math.floor(remaining * 0.4))
+      Math.max(maxRouteLength + 2, 8),
+      Math.max(8, Math.floor(remaining * 0.4))
     );
     let entryWidth = Math.max(remaining - routeWidth, 12);
     if (entryWidth > maxEntryLength + 2) {
       const spare = entryWidth - (maxEntryLength + 2);
       entryWidth = maxEntryLength + 2;
-      routeWidth = Math.min(routeWidth + spare, maxRouteLength + 2);
+      routeWidth = Math.min(routeWidth + spare, Math.max(maxRouteLength + 2, 8));
     }
 
     const head = showOrigin
@@ -101,7 +106,7 @@ export async function formatTable(data, { color = false, columns } = {}) {
       '',
       ...redirects.map(r => {
         const status = r.status ? ` (${r.status})` : '';
-        return `  ${r.route} → ${r.destination}${status}`;
+        return truncateLine(`  ${r.route} → ${r.destination}${status}`, terminalWidth);
       })
     );
   }
@@ -117,7 +122,10 @@ export async function formatTable(data, { color = false, columns } = {}) {
       '',
       ...fallbackRoutes.map(f => {
         const origin = f.origin && f.origin !== 'project' ? `, ${f.origin}` : '';
-        return `  ${f.from} → ${f.route} (${f.mode}${origin})`;
+        return truncateLine(
+          `  ${f.from} → ${f.route} (${f.mode}${origin})`,
+          terminalWidth
+        );
       })
     );
   }

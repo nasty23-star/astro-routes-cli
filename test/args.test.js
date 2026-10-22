@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import {
   DEFAULT_TIMEOUT_MS,
+  findAstroRoot,
   formatHelp,
   formatVersion,
   parseArgs,
@@ -19,7 +20,6 @@ function argv(...args) {
 test('parseArgs: значения по умолчанию', () => {
   assert.deepEqual(parseArgs(argv()), {
     json: false,
-    dev: false,
     all: false,
     output: null,
     root: null,
@@ -33,12 +33,11 @@ test('parseArgs: значения по умолчанию', () => {
 
 test('parseArgs: длинные и короткие флаги', () => {
   const opts = parseArgs(argv(
-    '--json', '--dev', '--all', '--no-color', '--verbose',
+    '--json', '--all', '--no-color', '--verbose',
     '-o', 'routes.json', '-r', '.', '-t', '1500'
   ));
 
   assert.equal(opts.json, true);
-  assert.equal(opts.dev, true);
   assert.equal(opts.all, true);
   assert.equal(opts.noColor, true);
   assert.equal(opts.verbose, true);
@@ -87,6 +86,38 @@ test('resolveRoot: существующий каталог и ошибки', (t)
   const file = path.join(dir, 'file.txt');
   fs.writeFileSync(file, 'x');
   assert.throws(() => resolveRoot(file), /Каталог не найден/);
+});
+
+test('findAstroRoot: находит astro.config вверх по дереву', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astro-routes-root-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  fs.writeFileSync(path.join(dir, 'astro.config.mjs'), 'export default {}');
+  const nested = path.join(dir, 'src', 'pages');
+  fs.mkdirSync(nested, { recursive: true });
+
+  assert.equal(findAstroRoot(nested), path.resolve(dir));
+});
+
+test('findAstroRoot: находит package.json с зависимостью astro', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astro-routes-root-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  fs.writeFileSync(
+    path.join(dir, 'package.json'),
+    JSON.stringify({ dependencies: { astro: '^7.0.0' } })
+  );
+  const nested = path.join(dir, 'src', 'pages');
+  fs.mkdirSync(nested, { recursive: true });
+
+  assert.equal(findAstroRoot(nested), path.resolve(dir));
+});
+
+test('findAstroRoot: возвращает null, если проекта нет', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astro-routes-root-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  assert.equal(findAstroRoot(dir), null);
 });
 
 test('formatHelp и formatVersion', () => {
