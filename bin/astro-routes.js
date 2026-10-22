@@ -11,6 +11,7 @@ function parseArgs(argv) {
   return {
     json: args.includes('--json'),
     dev: args.includes('--dev'),
+    all: args.includes('--all'),
     output: (() => {
       const i = args.indexOf('--output');
       return i !== -1 && args[i + 1] ? args[i + 1] : null;
@@ -27,6 +28,7 @@ function printHelp() {
   --json              Вывести маршруты в формате JSON
   --output <file>     Сохранить JSON в файл (используется вместе с --json)
   --dev               Получить маршруты через dev-сервер (быстрее, без полной сборки)
+  --all               Показать также internal/external маршруты
   --help, -h          Показать эту справку
 `);
 }
@@ -178,10 +180,12 @@ async function main() {
     process.exit(1);
   }
 
-  // NEW: включаем редиректы в фильтрацию
-  const validRoutes = (routes || []).filter(
-    r => r.type === 'page' || r.type === 'endpoint' || r.type === 'redirect'
-  );
+  // NEW: включаем редиректы в фильтрацию; по умолчанию только маршруты проекта
+  const validRoutes = (routes || []).filter(r => {
+    const typeOk = r.type === 'page' || r.type === 'endpoint' || r.type === 'redirect';
+    const originOk = opts.all || (r.origin ?? 'project') === 'project';
+    return typeOk && originOk;
+  });
 
   const data = validRoutes.map(r => {
     const base = {
