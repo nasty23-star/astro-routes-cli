@@ -1,5 +1,15 @@
 [
   {
+    "route": "/_server-islands/[name]",
+    "type": "page",
+    "origin": "internal"
+  },
+  {
+    "route": "/_image",
+    "type": "endpoint",
+    "origin": "internal"
+  },
+  {
     "route": "/about",
     "type": "page",
     "origin": "project"
@@ -28,5 +38,10 @@
     "route": "/",
     "type": "page",
     "origin": "project"
+  },
+  {
+    "route": "/404",
+    "type": "page",
+    "origin": "internal"
   }
 ]

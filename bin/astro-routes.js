@@ -230,32 +230,92 @@ async function collectRoutes({ root, useDev, timeoutMs = 60_000 }) {
 
 // ---------- Вывод ----------
 function outputJson(data, outputPath) {
-  const jsonString = JSON.stringify(data, null, 2);
-  if (outputPath) {
-    fs.writeFileSync(outputPath, jsonString, 'utf8');
+  const jsonString = `${JSON.stringify(data, null, 2)}\n`;
+
+  if (!outputPath || outputPath === '-') {
+    process.stdout.write(jsonString);
     return;
   }
-  console.log(jsonString);
+
+  const target = path.resolve(outputPath);
+  const dir = path.dirname(target);
+  const temp = path.join(
+    dir,
+    `.${path.basename(target)}.${process.pid}.${Date.now()}.tmp`
+  );
+
+  try {
+    fs.writeFileSync(temp, jsonString, 'utf8');
+    fs.renameSync(temp, target);
+  } catch (error) {
+    try {
+      fs.unlinkSync(temp);
+    } catch {
+      // временный файл мог не создаться
+    }
+    throw error;
+  }
 }
 
 function outputTable(data, { color = false } = {}) {
-  const routes = data.filter(r => r.type !== 'redirect'); // NEW: редиректы выводим отдельно
-  const redirects = data.filter(r => r.type === 'redirect'); // NEW
+  const routes = data.filter(r => r.type !== 'redirect');
+  const redirects = data.filter(r => r.type === 'redirect');
 
   if (routes.length > 0) {
-    const maxRouteLength = Math.max(...routes.map(r => r.route.length), 5);
-    const entryPointLength = Math.max(...routes.map(r => r.entrypoint.length), 5);
+    const showOrigin = routes.some(r => r.origin && r.origin !== 'project');
+    const terminalWidth = Math.max(process.stdout.columns || 100, 60);
+    const columnCount = showOrigin ? 5 : 4;
+    // cli-table3 добавляет рамки/паддинги сверх суммы colWidths
+    const available = Math.max(terminalWidth - columnCount - 2, 40);
+    const typeWidth = 10;
+    const modeWidth = 8;
+    const originWidth = showOrigin ? 10 : 0;
+    const remaining = Math.max(available - typeWidth - modeWidth - originWidth, 30);
+
+    const maxRouteLength = Math.max(
+      ...routes.map(r => r.route.length),
+      'ROUTE'.length
+    );
+    const maxEntryLength = Math.max(
+      ...routes.map(r => (r.entrypoint ?? '—').length),
+      'ENTRYPOINT'.length
+    );
+
+    let routeWidth = Math.min(
+      Math.max(maxRouteLength + 2, 12),
+      Math.max(12, Math.floor(remaining * 0.4))
+    );
+    let entryWidth = Math.max(remaining - routeWidth, 12);
+    if (entryWidth > maxEntryLength + 2) {
+      const spare = entryWidth - (maxEntryLength + 2);
+      entryWidth = maxEntryLength + 2;
+      routeWidth = Math.min(routeWidth + spare, maxRouteLength + 2);
+    }
+
+    const head = showOrigin
+      ? ['ROUTE', 'TYPE', 'MODE', 'ORIGIN', 'ENTRYPOINT']
+      : ['ROUTE', 'TYPE', 'MODE', 'ENTRYPOINT'];
+    const colWidths = showOrigin
+      ? [routeWidth, typeWidth, modeWidth, originWidth, entryWidth]
+      : [routeWidth, typeWidth, modeWidth, entryWidth];
+
     const table = new Table({
-      head: ['ROUTE', 'TYPE', 'MODE', 'ENTRYPOINT'],
-      colWidths: [Math.min(maxRouteLength + 5, 60), 15, 10, Math.min(entryPointLength + 15, 60)],
+      head,
+      colWidths,
       style: color ? { head: ['cyan'], border: ['grey'] } : { head: [], border: [] },
     });
-    routes.forEach(r => table.push([r.route, r.type, r.mode, r.entrypoint]));
-    console.log('\n📋 Найденные маршруты:\n');
+
+    routes.forEach(r => {
+      const row = [r.route, r.type, r.mode];
+      if (showOrigin) row.push(r.origin);
+      row.push(r.entrypoint ?? '—');
+      table.push(row);
+    });
+
+    console.log(`\n📋 Найденные маршруты (${data.length}):\n`);
     console.log(table.toString());
   }
 
-  // NEW: отдельный блок для редиректов
   if (redirects.length > 0) {
     console.log('\n↪️  Редиректы:\n');
     redirects.forEach(r => {
@@ -264,7 +324,12 @@ function outputTable(data, { color = false } = {}) {
     });
   }
 
-  console.log('\n');
+  const counts = data.reduce((acc, r) => {
+    acc[r.type] = (acc[r.type] ?? 0) + 1;
+    return acc;
+  }, {});
+  const parts = Object.entries(counts).map(([type, count]) => `${type}: ${count}`);
+  console.log(`\nИтого: ${data.length}${parts.length ? ` — ${parts.join(', ')}` : ''}\n`);
 }
 
 // ---------- main ----------
