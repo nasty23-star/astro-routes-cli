@@ -20,6 +20,14 @@ const data = [
     mode: 'static',
     entrypoint: 'src/pages/blog/[slug].astro',
     origin: 'project',
+    fallbacks: [
+      {
+        route: '/ru/blog/[slug]',
+        type: 'fallback',
+        mode: 'static',
+        origin: 'project',
+      },
+    ],
   },
   {
     route: '/api/health',
@@ -54,6 +62,9 @@ test('formatTable: summary, ORIGIN, null entrypoint и redirect status', () => {
   assert.match(text, /ORIGIN/);
   assert.match(text, /—/);
   assert.match(text, /\/old → \/new \(301\)/);
+  assert.match(text, /↳ Fallback-маршруты/);
+  assert.match(text, /\/blog\/\[slug\] → \/ru\/blog\/\[slug\] \(static\)/);
+  assert.match(text, /\(\+1 fallback\)/);
 
   for (const line of text.split('\n')) {
     assert.ok(line.length <= 80, `строка длиннее 80 колонок (${line.length}): ${line}`);

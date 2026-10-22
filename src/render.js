@@ -105,12 +105,35 @@ export function formatTable(data, { color = false, columns } = {}) {
     );
   }
 
+  const fallbackRoutes = data.flatMap(r =>
+    (r.fallbacks ?? []).map(f => ({ from: r.route, ...f }))
+  );
+
+  if (fallbackRoutes.length > 0) {
+    chunks.push(
+      '',
+      '↳ Fallback-маршруты:',
+      '',
+      ...fallbackRoutes.map(f => {
+        const origin = f.origin && f.origin !== 'project' ? `, ${f.origin}` : '';
+        return `  ${f.from} → ${f.route} (${f.mode}${origin})`;
+      })
+    );
+  }
+
   const counts = data.reduce((acc, r) => {
     acc[r.type] = (acc[r.type] ?? 0) + 1;
     return acc;
   }, {});
   const parts = Object.entries(counts).map(([type, count]) => `${type}: ${count}`);
-  chunks.push('', `Итого: ${data.length}${parts.length ? ` — ${parts.join(', ')}` : ''}`, '');
+  const fallbackSuffix = fallbackRoutes.length > 0
+    ? ` (+${fallbackRoutes.length} fallback)`
+    : '';
+  chunks.push(
+    '',
+    `Итого: ${data.length}${fallbackSuffix}${parts.length ? ` — ${parts.join(', ')}` : ''}`,
+    ''
+  );
 
   return `${chunks.join('\n')}\n`;
 }

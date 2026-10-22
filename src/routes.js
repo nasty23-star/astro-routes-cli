@@ -42,6 +42,31 @@ export function getRedirectInfo(route) {
   return null;
 }
 
+function normalizeFallbacks(route, root, all) {
+  const seen = new Set([routePath(route)]);
+  const fallbacks = [];
+
+  for (const fallback of route.fallbackRoutes ?? []) {
+    const origin = fallback.origin ?? 'project';
+    if (!all && origin !== 'project') continue;
+
+    const routeName = routePath(fallback);
+    // Одинаковый путь не добавляет новой информации о маршруте
+    if (!routeName || seen.has(routeName)) continue;
+    seen.add(routeName);
+
+    fallbacks.push({
+      route: routeName,
+      type: fallback.type ?? 'fallback',
+      mode: (fallback.isPrerendered ?? fallback.prerender) ? 'static' : 'server',
+      origin,
+    });
+  }
+
+  fallbacks.sort((a, b) => a.route.localeCompare(b.route));
+  return fallbacks;
+}
+
 export function normalizeRoutes(routes, { root = process.cwd(), all = false } = {}) {
   const validRoutes = (routes || []).filter(route => {
     const typeOk = SUPPORTED_TYPES.has(route.type);
@@ -63,6 +88,11 @@ export function normalizeRoutes(routes, { root = process.cwd(), all = false } = 
       base.destination = info?.destination ?? null;
       base.status = info?.status ?? null;
       base.entrypoint = null;
+    }
+
+    const fallbacks = normalizeFallbacks(route, root, all);
+    if (fallbacks.length > 0) {
+      base.fallbacks = fallbacks;
     }
 
     return base;

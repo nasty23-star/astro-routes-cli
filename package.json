@@ -18,6 +18,9 @@
   ],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=18.17"
+  },
   "packageManager": "pnpm@10.34.3",
   "peerDependencies": {
     "astro": ">=5.0.0"

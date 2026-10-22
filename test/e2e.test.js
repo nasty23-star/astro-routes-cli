@@ -10,6 +10,7 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const cli = path.join(repoRoot, 'bin', 'astro-routes.js');
 const basic = path.join(repoRoot, 'test', 'fixtures', 'basic');
 const hang = path.join(repoRoot, 'test', 'fixtures', 'hang');
+const i18n = path.join(repoRoot, 'test', 'fixtures', 'i18n');
 
 const artifactNames = [
   'dist',
@@ -78,11 +79,13 @@ function runCli(args, { cwd = repoRoot, timeout = 120_000 } = {}) {
 beforeEach(() => {
   cleanFixture(basic);
   cleanFixture(hang);
+  cleanFixture(i18n);
 });
 
 after(() => {
   cleanFixture(basic);
   cleanFixture(hang);
+  cleanFixture(i18n);
 });
 
 test('e2e: build прерывается и отдаёт отсортированные project-маршруты', async () => {
@@ -117,6 +120,31 @@ test('e2e: --dev даёт project-маршруты, --all добавляет int
   const allRoutes = JSON.parse(all.stdout);
   assert.equal(allRoutes.length, 9);
   assert.ok(allRoutes.some(r => r.route === '/_image' && r.origin === 'internal'));
+});
+
+test('e2e: i18n fallback-маршруты попадают в поле fallbacks', async () => {
+  const result = await runCli(['--root', i18n, '--json']);
+  assert.equal(result.code, 0, result.stderr);
+
+  const routes = JSON.parse(result.stdout);
+  assert.deepEqual(routes.map(r => r.route), ['/en', '/en/about']);
+
+  assert.deepEqual(routes.find(r => r.route === '/en/about').fallbacks, [
+    {
+      route: '/ru/about',
+      type: 'fallback',
+      mode: 'static',
+      origin: 'project',
+    },
+  ]);
+  assert.deepEqual(routes.find(r => r.route === '/en').fallbacks, [
+    {
+      route: '/ru',
+      type: 'fallback',
+      mode: 'static',
+      origin: 'project',
+    },
+  ]);
 });
 
 test('e2e: --output без --json пишет JSON в файл', async (t) => {

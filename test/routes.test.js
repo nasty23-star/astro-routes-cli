@@ -19,6 +19,29 @@ const routes = [
     isPrerendered: true,
     entrypoint: path.join(root, 'src/pages/about.astro'),
     origin: 'project',
+    fallbackRoutes: [
+      {
+        pattern: '/about',
+        type: 'fallback',
+        isPrerendered: true,
+        entrypoint: path.join(root, 'src/pages/about.astro'),
+        origin: 'project',
+      },
+      {
+        pattern: '/ru/about',
+        type: 'fallback',
+        isPrerendered: true,
+        entrypoint: path.join(root, 'src/pages/about.astro'),
+        origin: 'project',
+      },
+      {
+        pattern: '/internal/about',
+        type: 'fallback',
+        isPrerendered: false,
+        entrypoint: path.join(root, 'src/pages/about.astro'),
+        origin: 'internal',
+      },
+    ],
   },
   {
     pattern: '/',
@@ -126,6 +149,14 @@ test('normalizeRoutes: только project-маршруты, сортировк
   const about = data.find(r => r.route === '/about');
   assert.equal(about.entrypoint, 'src/pages/about.astro');
   assert.equal(about.mode, 'static');
+  assert.deepEqual(about.fallbacks, [
+    {
+      route: '/ru/about',
+      type: 'fallback',
+      mode: 'static',
+      origin: 'project',
+    },
+  ]);
 
   const health = data.find(r => r.route === '/api/health');
   assert.equal(health.mode, 'server');
@@ -152,6 +183,10 @@ test('normalizeRoutes: all включает internal/external, fallback оста
   assert.ok(names.includes('/_external'));
   assert.ok(!names.includes('/fallback'));
   assert.equal(data.find(r => r.route === '/_image').origin, 'internal');
+  assert.deepEqual(
+    data.find(r => r.route === '/about').fallbacks.map(f => f.route),
+    ['/internal/about', '/ru/about']
+  );
 });
 
 test('normalizeRoutes: пустой вход', () => {
