@@ -11,6 +11,9 @@ async function main() {
     opts = parseArgs(process.argv);
   } catch (error) {
     console.error(`Ошибка аргументов: ${error.message}`);
+    if (process.argv.includes('--verbose') && error.stack) {
+      console.error(error.stack);
+    }
     console.error('Используйте --help для списка опций.');
     process.exitCode = 1;
     return;
@@ -31,6 +34,9 @@ async function main() {
     root = resolveRoot(opts.root);
   } catch (error) {
     console.error(error.message);
+    if (opts.verbose && error.stack) {
+      console.error(error.stack);
+    }
     process.exitCode = 1;
     return;
   }
@@ -42,9 +48,15 @@ async function main() {
     if (e?.code === 'ASTRO_ROUTES_TIMEOUT') {
       // build/dev нельзя отменить снаружи — завершаем процесс принудительно
       console.error(e.message);
+      if (opts.verbose && e.stack) {
+        console.error(e.stack);
+      }
       process.exit(1);
     }
     console.error('Ошибка при получении маршрутов:', e.message);
+    if (opts.verbose && e.stack) {
+      console.error(e.stack);
+    }
     process.exitCode = 1;
     return;
   }
@@ -67,15 +79,21 @@ async function main() {
     if (opts.json) {
       writeJson(data, opts.output);
     } else {
-      process.stdout.write(formatTable(data, { color: useColor }));
+      process.stdout.write(await formatTable(data, { color: useColor }));
     }
   } catch (error) {
     console.error(`Не удалось записать результат: ${error.message}`);
+    if (opts.verbose && error.stack) {
+      console.error(error.stack);
+    }
     process.exitCode = 1;
   }
 }
 
 main().catch(e => {
-  console.error('Непредвиденная ошибка:', e?.stack || e);
-  process.exit(1);
+  console.error('Непредвиденная ошибка:', e?.message ?? e);
+  if (process.argv.includes('--verbose') && e?.stack) {
+    console.error(e.stack);
+  }
+  process.exitCode = 1;
 });

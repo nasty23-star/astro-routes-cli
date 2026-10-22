@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { after, beforeEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const astroMajor = Number(require('astro/package.json').version.split('.')[0]);
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const cli = path.join(repoRoot, 'bin', 'astro-routes.js');
@@ -129,22 +133,27 @@ test('e2e: i18n fallback-маршруты попадают в поле fallbacks
   const routes = JSON.parse(result.stdout);
   assert.deepEqual(routes.map(r => r.route), ['/en', '/en/about']);
 
-  assert.deepEqual(routes.find(r => r.route === '/en/about').fallbacks, [
-    {
-      route: '/ru/about',
-      type: 'fallback',
-      mode: 'static',
-      origin: 'project',
-    },
-  ]);
-  assert.deepEqual(routes.find(r => r.route === '/en').fallbacks, [
-    {
-      route: '/ru',
-      type: 'fallback',
-      mode: 'static',
-      origin: 'project',
-    },
-  ]);
+  if (astroMajor >= 6) {
+    assert.deepEqual(routes.find(r => r.route === '/en/about').fallbacks, [
+      {
+        route: '/ru/about',
+        type: 'fallback',
+        mode: 'static',
+        origin: 'project',
+      },
+    ]);
+    assert.deepEqual(routes.find(r => r.route === '/en').fallbacks, [
+      {
+        route: '/ru',
+        type: 'fallback',
+        mode: 'static',
+        origin: 'project',
+      },
+    ]);
+  } else {
+    // В Astro 5 fallbackRoutes ещё не отдаются через astro:routes:resolved
+    assert.equal(routes.find(r => r.route === '/en/about').fallbacks, undefined);
+  }
 });
 
 test('e2e: --output без --json пишет JSON в файл', async (t) => {
@@ -183,6 +192,12 @@ test('e2e: неизвестный флаг и неверный --timeout даю�
   const timeout = await runCli(['--timeout', 'abc']);
   assert.equal(timeout.code, 1);
   assert.match(timeout.stderr, /--timeout/);
+});
+
+test('e2e: --verbose печатает stack trace', async () => {
+  const result = await runCli(['--root', '.missing', '--verbose']);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /at resolveRoot/);
 });
 
 test('e2e: timeout на зависшем config:setup, без unhandled rejection', async () => {

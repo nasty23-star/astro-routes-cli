@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import Table from 'cli-table3';
 
 export function formatJson(data) {
   return `${JSON.stringify(data, null, 2)}\n`;
@@ -34,7 +33,9 @@ export function writeJson(data, outputPath, { stdout = process.stdout } = {}) {
   }
 }
 
-export function formatTable(data, { color = false, columns } = {}) {
+export async function formatTable(data, { color = false, columns } = {}) {
+  // Тяжёлый CJS-пакет грузим только когда реально нужна таблица
+  const { default: Table } = await import('cli-table3');
   const routes = data.filter(r => r.type !== 'redirect');
   const redirects = data.filter(r => r.type === 'redirect');
   const chunks = [];

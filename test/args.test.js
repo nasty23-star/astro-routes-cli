@@ -25,6 +25,7 @@ test('parseArgs: значения по умолчанию', () => {
     root: null,
     timeout: DEFAULT_TIMEOUT_MS,
     noColor: false,
+    verbose: false,
     version: false,
     help: false,
   });
@@ -32,7 +33,7 @@ test('parseArgs: значения по умолчанию', () => {
 
 test('parseArgs: длинные и короткие флаги', () => {
   const opts = parseArgs(argv(
-    '--json', '--dev', '--all', '--no-color',
+    '--json', '--dev', '--all', '--no-color', '--verbose',
     '-o', 'routes.json', '-r', '.', '-t', '1500'
   ));
 
@@ -40,6 +41,7 @@ test('parseArgs: длинные и короткие флаги', () => {
   assert.equal(opts.dev, true);
   assert.equal(opts.all, true);
   assert.equal(opts.noColor, true);
+  assert.equal(opts.verbose, true);
   assert.equal(opts.output, 'routes.json');
   assert.equal(opts.root, '.');
   assert.equal(opts.timeout, 1500);
@@ -91,6 +93,7 @@ test('formatHelp и formatVersion', () => {
   const help = formatHelp();
   assert.match(help, /--root/);
   assert.match(help, /--no-color/);
+  assert.match(help, /--verbose/);
   assert.match(help, /--timeout/);
 
   assert.match(formatVersion(), /^astro-routes-cli \d+\.\d+\.\d+$/);

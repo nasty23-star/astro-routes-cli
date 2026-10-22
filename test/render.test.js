@@ -54,8 +54,8 @@ const data = [
   },
 ];
 
-test('formatTable: summary, ORIGIN, null entrypoint и redirect status', () => {
-  const text = formatTable(data, { columns: 80 });
+test('formatTable: summary, ORIGIN, null entrypoint и redirect status', async () => {
+  const text = await formatTable(data, { columns: 80 });
 
   assert.ok(!text.includes('\u001b['), 'в таблице не должно быть ANSI');
   assert.match(text, /Итого: 5/);
@@ -71,7 +71,7 @@ test('formatTable: summary, ORIGIN, null entrypoint и redirect status', () => {
   }
 });
 
-test('formatTable: длинные значения обрезаются, таблица влезает в 100 колонок', () => {
+test('formatTable: длинные значения обрезаются, таблица влезает в 100 колонок', async () => {
   const longData = [
     {
       route: `/${'very-long-route/'.repeat(5)}`,
@@ -82,7 +82,7 @@ test('formatTable: длинные значения обрезаются, таб�
     },
   ];
 
-  const text = formatTable(longData, { columns: 100 });
+  const text = await formatTable(longData, { columns: 100 });
 
   assert.match(text, /…/);
   for (const line of text.split('\n')) {
@@ -90,8 +90,8 @@ test('formatTable: длинные значения обрезаются, таб�
   }
 });
 
-test('formatTable: пустой список не падает', () => {
-  const text = formatTable([], { columns: 80 });
+test('formatTable: пустой список не падает', async () => {
+  const text = await formatTable([], { columns: 80 });
   assert.match(text, /Итого: 0/);
 });
 

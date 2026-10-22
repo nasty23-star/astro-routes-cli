@@ -15,6 +15,7 @@ export function parseArgs(argv) {
       root: { type: 'string', short: 'r' },
       timeout: { type: 'string', short: 't' },
       'no-color': { type: 'boolean' },
+      verbose: { type: 'boolean' },
       version: { type: 'boolean', short: 'v' },
       help: { type: 'boolean', short: 'h' },
     },
@@ -43,6 +44,7 @@ export function parseArgs(argv) {
     root: values.root ?? null,
     timeout,
     noColor: Boolean(values['no-color']),
+    verbose: Boolean(values.verbose),
     version: Boolean(values.version),
     help: Boolean(values.help),
   };
@@ -76,6 +78,7 @@ export function formatHelp() {
       --dev               Получить маршруты через dev-сервер
       --all               Показать также internal/external маршруты
       --no-color          Отключить цвета в таблице
+      --verbose           Показывать stack trace при ошибках
   -v, --version           Показать версию
   -h, --help              Показать эту справку
 `;
