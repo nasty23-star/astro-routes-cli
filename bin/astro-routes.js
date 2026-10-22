@@ -42,6 +42,22 @@ function patternToString(pattern) {
     .replace(/\\\//g, '/');
 }
 
+// NEW: извлечение информации о редиректе из маршрута
+function getRedirectInfo(route) {
+  // В Astro v5+ используется route.redirect.
+  // Для совместимости со старыми версиями проверяем и redirectRoute.
+  const redirect = route.redirect ?? route.redirectRoute;
+  if (!redirect) return null;
+
+  if (typeof redirect === 'string') {
+    return { destination: redirect, status: null };
+  }
+  return {
+    destination: redirect.destination ?? null,
+    status: redirect.status ?? null,
+  };
+}
+
 // ---------- Получение маршрутов ----------
 async function collectRoutes({ useDev, timeoutMs = 60_000 }) {
   // Резолвим astro из целевого проекта (cwd), а не из папки инструмента
@@ -117,15 +133,30 @@ function outputJson(data, outputPath) {
 }
 
 function outputTable(data) {
-  const maxRouteLength = Math.max(...data.map(r => r.route.length), 5);
-  const table = new Table({
-    head: ['ROUTE', 'TYPE', 'MODE'],
-    colWidths: [Math.min(maxRouteLength + 5, 60), 15, 10],
-    style: { head: ['cyan'], border: ['grey'] },
-  });
-  data.forEach(r => table.push([r.route, r.type, r.mode]));
-  console.log('\n📋 Найденные маршруты:\n');
-  console.log(table.toString());
+  const routes = data.filter(r => r.type !== 'redirect'); // NEW: редиректы выводим отдельно
+  const redirects = data.filter(r => r.type === 'redirect'); // NEW
+
+  if (routes.length > 0) {
+    const maxRouteLength = Math.max(...routes.map(r => r.route.length), 5);
+    const table = new Table({
+      head: ['ROUTE', 'TYPE', 'MODE'],
+      colWidths: [Math.min(maxRouteLength + 5, 60), 15, 10],
+      style: { head: ['cyan'], border: ['grey'] },
+    });
+    routes.forEach(r => table.push([r.route, r.type, r.mode]));
+    console.log('\n📋 Найденные маршруты:\n');
+    console.log(table.toString());
+  }
+
+  // NEW: отдельный блок для редиректов
+  if (redirects.length > 0) {
+    console.log('\n↪️  Редиректы:\n');
+    redirects.forEach(r => {
+      const status = r.status ? ` (${r.status})` : '';
+      console.log(`  ${r.route} → ${r.destination}${status}`);
+    });
+  }
+
   console.log('\n');
 }
 
@@ -146,16 +177,27 @@ async function main() {
     process.exit(1);
   }
 
+  // NEW: включаем редиректы в фильтрацию
   const validRoutes = (routes || []).filter(
-    r => r.type === 'page' || r.type === 'endpoint'
+    r => r.type === 'page' || r.type === 'endpoint' || r.type === 'redirect'
   );
 
-  const data = validRoutes.map(r => ({
-    route: patternToString(r.pattern),
-    type: r.type,
-    mode: (r.isPrerendered || r.prerender) ? 'static' : 'server',
-    entrypoint: r.entrypoint ? (r.entrypoint.pathname || r.entrypoint) : null,
-  }));
+  const data = validRoutes.map(r => {
+    const base = {
+      route: patternToString(r.pattern),
+      type: r.type,
+      mode: (r.isPrerendered || r.prerender) ? 'static' : 'server',
+      entrypoint: r.entrypoint ? (r.entrypoint.pathname || r.entrypoint) : null,
+    };
+    // NEW: для редиректов добавляем destination/status и убираем entrypoint
+    if (r.type === 'redirect') {
+      const info = getRedirectInfo(r);
+      base.destination = info?.destination ?? null;
+      base.status = info?.status ?? null;
+      base.entrypoint = null;
+    }
+    return base;
+  });
 
   if (data.length === 0) {
     if (opts.json) {
@@ -177,4 +219,3 @@ main().catch(e => {
   console.error('Непредвиденная ошибка:', e?.stack || e);
   process.exit(1);
 });
-
