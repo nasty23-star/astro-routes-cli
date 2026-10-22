@@ -5,17 +5,17 @@ const marker = {
   name: 'fixture-marker',
   hooks: {
     'astro:routes:resolved': ({ routes }) => {
-      fs.writeFileSync('routes-hook.json', JSON.stringify(routes.map((r) => ({
+      fs.writeFileSync(new URL('routes-hook.json', import.meta.url), JSON.stringify(routes.map((r) => ({
         route: r.pattern,
         type: r.type,
         origin: r.origin,
       })), null, 2));
     },
     'astro:build:start': () => {
-      fs.writeFileSync('build-start.txt', 'yes');
+      fs.writeFileSync(new URL('build-start.txt', import.meta.url), 'yes');
     },
     'astro:build:done': () => {
-      fs.writeFileSync('build-done.txt', 'yes');
+      fs.writeFileSync(new URL('build-done.txt', import.meta.url), 'yes');
     },
   },
 };

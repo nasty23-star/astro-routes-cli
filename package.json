@@ -7,7 +7,8 @@
     "astro-routes": "./bin/astro-routes.js"
   },
   "files": [
-    "bin"
+    "bin",
+    "src"
   ],
   "keywords": [
     "astro",
@@ -22,7 +23,7 @@
     "astro": ">=5.0.0"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test --test-isolation=none --test-concurrency=1 test/args.test.js test/routes.test.js test/render.test.js test/e2e.test.js"
   },
   "dependencies": {
     "cli-table3": "^0.6.5"
