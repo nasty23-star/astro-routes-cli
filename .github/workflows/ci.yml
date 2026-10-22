@@ -39,10 +39,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
+      # Версия pnpm берётся из package.json → packageManager.
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
