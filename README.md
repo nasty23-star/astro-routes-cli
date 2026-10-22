@@ -6,7 +6,7 @@ CLI-утилита для получения списка маршрутов Ast
 
 - таблица или JSON;
 - project-маршруты по умолчанию, `--all` — вместе с internal/external;
-- `--dev` — через инициализацию dev-сервера;
+- `--all` — вместе с internal/external;
 - `--root` — запуск из любого каталога;
 - `--output` — атомарная запись JSON в файл;
 - `--timeout` — защита от зависшей инициализации;
@@ -64,15 +64,16 @@ astro-routes
 astro-routes --root ./apps/web
 ```
 
+Если `--root` не указан, CLI ищет ближайший `astro.config.*` или `package.json` с зависимостью `astro` вверх по дереву и использует этот каталог.
+
 ### Опции
 
 | Опция | Алиас | По умолчанию | Описание |
 |---|---|---|---|
 | `--json` | `-j` | выкл | Вывести JSON |
 | `--output <file>` | `-o` | — | Записать JSON в файл; неявно включает `--json`; `-` — stdout |
-| `--root <dir>` | `-r` | `cwd` | Корень Astro-проекта |
+| `--root <dir>` | `-r` | cwd / ближайший Astro-проект | Корень Astro-проекта |
 | `--timeout <ms>` | `-t` | `60000` | Таймаут получения маршрутов |
-| `--dev` | — | выкл | Получать маршруты через `astro.dev`, без полной сборки |
 | `--all` | — | выкл | Показать также `internal`/`external` маршруты |
 | `--no-color` | — | выкл | Отключить цвета в таблице |
 | `--verbose` | — | выкл | Показывать stack trace при ошибках |
@@ -108,7 +109,7 @@ astro-routes
 Итого: 6 — page: 3, endpoint: 1, redirect: 2
 ```
 
-В таблице длинные `route`/`entrypoint` обрезаются с `…`; полные значения есть в JSON.
+В таблице длинные `route`, `entrypoint`, redirects и fallback-маршруты обрезаются с `…`; полные значения есть в JSON.
 
 ### JSON
 
@@ -145,14 +146,13 @@ astro-routes --output routes.json
 
 Файл пишется атомарно: сначала во временный файл рядом, затем `rename`. В конце добавляется `\n`.
 
-### Dev-режим и internal-маршруты
+### Internal-маршруты
 
 ```bash
-astro-routes --dev --json
-astro-routes --dev --json --all
+astro-routes --json --all
 ```
 
-`--dev` прерывает инициализацию dev-сервера сразу после route discovery. Внутренние маршруты Astro (`/_image`, `/_server-islands`, `/404`) по умолчанию скрыты; `--all` показывает их с `"origin": "internal"`.
+Внутренние маршруты Astro (`/_image`, `/_server-islands`, `/404`) и injected-маршруты интеграций по умолчанию скрыты; `--all` показывает их с соответствующим `"origin"`.
 
 ### i18n fallback
 
@@ -178,6 +178,8 @@ astro-routes --dev --json --all
 
 В таблице они выводятся отдельным блоком `↳ Fallback-маршруты`, а в summary добавляется `(+N fallback)`. Одинаковые пути и fallback-маршруты других origin по умолчанию отбрасываются; `--all` включает и их.
 
+В Astro 5 `fallbackRoutes` ещё не отдаются через `astro:routes:resolved`, поэтому поле `fallbacks` там отсутствует. Полноценная поддержка — Astro 6+.
+
 ## Формат данных
 
 | Поле | Описание |
@@ -196,7 +198,7 @@ astro-routes --dev --json --all
 ## Как это работает
 
 1. CLI резолвит `astro` из `--root` через `createRequire(path.join(root, 'package.json'))`.
-2. Запускается `astro.build()` (или `astro.dev()` с `--dev`) с временной интеграцией `astro-routes-capture`.
+2. Запускается `astro.build()` с временной интеграцией `astro-routes-capture`.
 3. В хуке `astro:routes:resolved` интеграция бросает `RoutesCaptured` с кодом `ASTRO_ROUTES_CAPTURED`.
 4. CLI ловит **только** эту ошибку и возвращает маршруты. Сборка прерывается до `content sync`, `astro:build:start` и `astro:build:done`; `dist` не создаётся.
 
@@ -205,6 +207,7 @@ astro-routes --dev --json --all
 - `astro:config:setup` пользовательских интеграций всё равно выполняется — это часть загрузки конфига.
 - `astro:config:done` и `astro:build:*` **не** выполняются. Для инспектора это осознанное поведение.
 - Inline-интеграция добавляется после пользовательских, поэтому их `astro:routes:resolved` успевают выполниться.
+- CLI выставляет `ASTRO_TELEMETRY_DISABLED=1`, если переменная не задана: инспектор не должен отправлять telemetry.
 
 ## Таймаут
 
@@ -231,7 +234,7 @@ pnpm test
 Тесты:
 
 - unit — аргументы, нормализация, redirect, entrypoint, таблица, JSON;
-- e2e — реальный Astro fixture: build, `--dev`, `--all`, `--output`, `--version`, timeout.
+- e2e — реальный Astro fixture: build, `--all`, `--output`, `--version`, timeout.
 
 Fixtures: `test/fixtures/basic`, `test/fixtures/hang` и `test/fixtures/i18n`.
 
@@ -243,10 +246,11 @@ Fixtures: `test/fixtures/basic`, `test/fixtures/hang` и `test/fixtures/i18n`.
 
 Workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) проверяет:
 
-- Astro 5, 6 и 7;
-- Node 22 и 24;
-- Ubuntu, плюс Windows для Astro 7 / Node 24.
+- Ubuntu + Node 22 + Astro 5, 6, 7;
+- Windows + Node 24 + Astro 7.
 
 Перед тестами CI ставит нужную версию Astro через `pnpm add -D astro@<major>`. На Astro 5 e2e-тест i18n fallback пропускается: там `fallbackRoutes` ещё не отдаются через `astro:routes:resolved`.
+
+Node 18/20 и macOS в обычный CI не входят, чтобы не раздувать матрицу.
 
 План работ, известные ошибки и чек-листы — в [TODO.md](TODO.md).
