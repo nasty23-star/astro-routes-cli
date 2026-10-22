@@ -59,19 +59,24 @@ function getRedirectInfo(route) {
 }
 
 // ---------- Получение маршрутов ----------
-async function collectRoutes({ useDev, timeoutMs = 60_000 }) {
+// Собственная ошибка-сигнал: прерывает build/dev сразу после того,
+// как Astro собрал манифест маршрутов, не давая сборке продолжиться.
+class RoutesCaptured extends Error {
+  constructor(routes) {
+    super('Routes captured');
+    this.name = 'RoutesCaptured';
+    this.code = 'ASTRO_ROUTES_CAPTURED';
+    this.routes = routes;
+  }
+}
+
+async function collectRoutes({ useDev }) {
   // Резолвим astro из целевого проекта (cwd), а не из папки инструмента
   const require = createRequire(process.cwd() + path.sep);
   const astroEntry = require.resolve('astro');
   const astro = await import(pathToFileURL(astroEntry).href);
 
   let capturedRoutes = null;
-  let resolveRoutes;
-  let rejectRoutes;
-  const routesPromise = new Promise((resolve, reject) => {
-    resolveRoutes = resolve;
-    rejectRoutes = reject;
-  });
 
   const capture = {
     name: 'astro-routes-capture',
@@ -79,31 +84,24 @@ async function collectRoutes({ useDev, timeoutMs = 60_000 }) {
       'astro:routes:resolved': ({ routes }) => {
         if (capturedRoutes === null) {
           capturedRoutes = routes;
-          resolveRoutes(routes);
         }
+        throw new RoutesCaptured(routes);
       },
     },
   };
-
-  const timeout = setTimeout(() => {
-    rejectRoutes(new Error(
-      `Не удалось получить маршруты за ${timeoutMs} мс. ` +
-      `Возможно, хук astro:routes:resolved не сработал (изменился API Astro?).`
-    ));
-  }, timeoutMs);
 
   let devServer = null;
 
   try {
     if (useDev && typeof astro.dev === 'function') {
-      // Запускаем dev-сервер; хук сработает в процессе инициализации
+      // Прерываем инициализацию dev-сервера сразу после route discovery
       devServer = await astro.dev({
         root: process.cwd(),
         integrations: [capture],
         logLevel: 'silent',
       });
     } else {
-      // Полная сборка; хук сработает в процессе
+      // Прерываем build до content sync и build:start
       await astro.build({
         root: process.cwd(),
         integrations: [capture],
@@ -111,11 +109,13 @@ async function collectRoutes({ useDev, timeoutMs = 60_000 }) {
       });
     }
 
-    // Ждём, пока хук сохранит маршруты (или сработает таймаут)
-    const routes = await routesPromise;
-    return routes;
+    return capturedRoutes ?? [];
+  } catch (error) {
+    if (error instanceof RoutesCaptured || error?.code === 'ASTRO_ROUTES_CAPTURED') {
+      return error.routes ?? capturedRoutes ?? [];
+    }
+    throw error;
   } finally {
-    clearTimeout(timeout);
     if (devServer && typeof devServer.stop === 'function') {
       await devServer.stop().catch(() => {});
     }

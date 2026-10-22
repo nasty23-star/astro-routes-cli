@@ -1,0 +1,47 @@
+[
+  {
+    "route": "/_server-islands/[name]",
+    "type": "page",
+    "origin": "internal"
+  },
+  {
+    "route": "/_image",
+    "type": "endpoint",
+    "origin": "internal"
+  },
+  {
+    "route": "/about",
+    "type": "page",
+    "origin": "project"
+  },
+  {
+    "route": "/api/health",
+    "type": "endpoint",
+    "origin": "project"
+  },
+  {
+    "route": "/blog/[slug]",
+    "type": "page",
+    "origin": "project"
+  },
+  {
+    "route": "/old",
+    "type": "redirect",
+    "origin": "project"
+  },
+  {
+    "route": "/old-temp",
+    "type": "redirect",
+    "origin": "project"
+  },
+  {
+    "route": "/",
+    "type": "page",
+    "origin": "project"
+  },
+  {
+    "route": "/404",
+    "type": "page",
+    "origin": "internal"
+  }
+]
