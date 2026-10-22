@@ -2,11 +2,10 @@
 
 import { build } from 'astro';
 import Table from 'cli-table3';
+import fs from 'fs';
 
-// Класс для прерывания сборки
 class StopBuild extends Error {}
 
-// Временная интеграция, чтобы вытащить маршруты
 const capture = {
   name: 'astro-routes-capture',
   hooks: {
@@ -19,56 +18,59 @@ const capture = {
 
 async function main() {
   try {
-    // Запускаем программную сборку и сразу прерываем её
     await build({ 
       root: process.cwd(), 
       integrations: [capture],
-      logLevel: 'silent' // чтобы не спамило логами сборки
+      logLevel: 'silent' 
     });
   } catch (e) {
     if (!(e instanceof StopBuild)) {
-      console.error('Ошибка при получении маршрутов:', e);
+      console.error('Ошибка при получении маршрутов:', e.message);
       process.exit(1);
     }
   }
 
   const routes = globalThis.__routes || [];
-  
-  if (routes.length === 0) {
-    console.log('Маршруты не найдены.');
+  const validRoutes = routes.filter(r => r.type === 'page' || r.type === 'endpoint');
+
+  if (validRoutes.length === 0) {
+    if (process.argv.includes('--json')) console.log('[]');
+    else console.log('Маршруты не найдены.');
     return;
   }
 
-  // Фильтруем только нужные типы
-  const validRoutes = routes.filter(r => r.type === 'page' || r.type === 'endpoint');
+  // Формируем массив данных
+  const data = validRoutes.map(r => ({
+    route: r.pattern.toString().replace(/^\/\^/, '').replace(/\$\/$/, '').replace(/\\\//g, '/'),
+    type: r.type,
+    mode: (r.isPrerendered || r.prerender) ? 'static' : 'server',
+    entrypoint: r.entrypoint ? r.entrypoint.pathname || r.entrypoint : null
+  }));
 
-  // Вычисляем максимальную длину маршрута, чтобы таблица не ломалась
-  const maxRouteLength = Math.max(
-    ...validRoutes.map(r => r.pattern.toString().length), 
-    5 // минимальная ширина для заголовка "ROUTE"
-  );
+  // Проверка на JSON
+  if (process.argv.includes('--json')) {
+    const jsonString = JSON.stringify(data, null, 2);
+    
+    // Проверка на сохранение в файл
+    const outputIndex = process.argv.indexOf('--output');
+    if (outputIndex !== -1 && process.argv[outputIndex + 1]) {
+      fs.writeFileSync(process.argv[outputIndex + 1], jsonString);
+      return;
+    }
+    
+    console.log(jsonString);
+    return;
+  }
 
-  // Создаем красивую таблицу
+  // Вывод таблицы
+  const maxRouteLength = Math.max(...data.map(r => r.route.length), 5);
   const table = new Table({
     head: ['ROUTE', 'TYPE', 'MODE'],
-    colWidths: [Math.min(maxRouteLength + 5, 60), 15, 10], // Ограничиваем макс. ширину 60 символами
-    style: {
-      head: ['cyan'], 
-      border: ['grey'],
-    },
+    colWidths: [Math.min(maxRouteLength + 5, 60), 15, 10],
+    style: { head: ['cyan'], border: ['grey'] }
   });
 
-  validRoutes.forEach(r => {
-    const pattern = r.pattern.toString()
-      .replace(/^\/\^/, '')
-      .replace(/\$\/$/, '')
-      .replace(/\\\//g, '/');
-      
-    const mode = (r.isPrerendered || r.prerender) ? 'static' : 'server';
-    
-    table.push([pattern, r.type, mode]);
-  });
-
+  data.forEach(r => table.push([r.route, r.type, r.mode]));
   console.log('\n📋 Найденные маршруты:\n');
   console.log(table.toString());
   console.log('\n');
