@@ -1,23 +1,72 @@
 #!/usr/bin/env node
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { parseArgs as nodeParseArgs } from 'node:util';
 import Table from 'cli-table3';
 import fs from 'node:fs';
 import path from 'node:path';
 
 // ---------- Парсинг аргументов ----------
+const DEFAULT_TIMEOUT_MS = 60_000;
+
 function parseArgs(argv) {
-  const args = argv.slice(2);
+  const { values } = nodeParseArgs({
+    args: argv.slice(2),
+    options: {
+      json: { type: 'boolean', short: 'j' },
+      dev: { type: 'boolean' },
+      all: { type: 'boolean' },
+      output: { type: 'string', short: 'o' },
+      root: { type: 'string', short: 'r' },
+      timeout: { type: 'string', short: 't' },
+      'no-color': { type: 'boolean' },
+      version: { type: 'boolean', short: 'v' },
+      help: { type: 'boolean', short: 'h' },
+    },
+    allowPositionals: false,
+  });
+
+  if (values.output === '') {
+    throw new Error('Опция --output требует путь к файлу.');
+  }
+
+  let timeout = DEFAULT_TIMEOUT_MS;
+  if (values.timeout !== undefined) {
+    const parsed = Number(values.timeout);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error('Опция --timeout требует положительное число миллисекунд.');
+    }
+    timeout = parsed;
+  }
+
   return {
-    json: args.includes('--json'),
-    dev: args.includes('--dev'),
-    all: args.includes('--all'),
-    output: (() => {
-      const i = args.indexOf('--output');
-      return i !== -1 && args[i + 1] ? args[i + 1] : null;
-    })(),
-    help: args.includes('--help') || args.includes('-h'),
+    // --output неявно включает JSON: иначе файл молча не создавался бы
+    json: Boolean(values.json) || values.output !== undefined,
+    dev: Boolean(values.dev),
+    all: Boolean(values.all),
+    output: values.output ?? null,
+    root: values.root ?? null,
+    timeout,
+    noColor: Boolean(values['no-color']),
+    version: Boolean(values.version),
+    help: Boolean(values.help),
   };
+}
+
+function resolveRoot(rootArg) {
+  const root = path.resolve(rootArg ?? process.cwd());
+  const stat = fs.statSync(root, { throwIfNoEntry: false });
+  if (!stat || !stat.isDirectory()) {
+    throw new Error(`Каталог не найден: ${root}`);
+  }
+  return root;
+}
+
+function printVersion() {
+  const pkg = JSON.parse(
+    fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')
+  );
+  console.log(`${pkg.name} ${pkg.version}`);
 }
 
 function printHelp() {
@@ -25,11 +74,15 @@ function printHelp() {
 Использование: astro-routes [опции]
 
 Опции:
-  --json              Вывести маршруты в формате JSON
-  --output <file>     Сохранить JSON в файл (используется вместе с --json)
-  --dev               Получить маршруты через dev-сервер (быстрее, без полной сборки)
-  --all               Показать также internal/external маршруты
-  --help, -h          Показать эту справку
+  -j, --json              Вывести маршруты в формате JSON
+  -o, --output <file>     Сохранить JSON в файл (включает --json)
+  -r, --root <dir>        Корень Astro-проекта (по умолчанию текущий каталог)
+  -t, --timeout <ms>      Таймаут получения маршрутов (по умолчанию 60000)
+      --dev               Получить маршруты через dev-сервер
+      --all               Показать также internal/external маршруты
+      --no-color          Отключить цвета в таблице
+  -v, --version           Показать версию
+  -h, --help              Показать эту справку
 `);
 }
 
@@ -72,55 +125,92 @@ class RoutesCaptured extends Error {
   }
 }
 
-async function collectRoutes({ useDev }) {
-  // Резолвим astro из целевого проекта (cwd), а не из папки инструмента
-  const require = createRequire(process.cwd() + path.sep);
-  const astroEntry = require.resolve('astro');
-  const astro = await import(pathToFileURL(astroEntry).href);
+// Отдельная ошибка таймаута: Astro build/dev нельзя отменить снаружи,
+// поэтому main завершит процесс после сообщения.
+class RoutesTimeoutError extends Error {
+  constructor(timeoutMs) {
+    super(
+      `Не удалось получить маршруты за ${timeoutMs} мс. ` +
+      `Возможно, зависла инициализация Astro. Увеличьте --timeout или проверьте конфиг.`
+    );
+    this.name = 'RoutesTimeoutError';
+    this.code = 'ASTRO_ROUTES_TIMEOUT';
+    this.timeoutMs = timeoutMs;
+  }
+}
 
-  let capturedRoutes = null;
+async function collectRoutes({ root, useDev, timeoutMs = 60_000 }) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new RoutesTimeoutError(timeoutMs)), timeoutMs);
+  });
 
-  const capture = {
-    name: 'astro-routes-capture',
-    hooks: {
-      'astro:routes:resolved': ({ routes }) => {
-        if (capturedRoutes === null) {
-          capturedRoutes = routes;
-        }
-        throw new RoutesCaptured(routes);
+  const collect = (async () => {
+    // Резолвим astro из целевого проекта, а не из папки инструмента
+    const require = createRequire(path.join(root, 'package.json'));
+    let astroEntry;
+    try {
+      astroEntry = require.resolve('astro');
+    } catch {
+      throw new Error(
+        `Не удалось найти astro в ${root}. ` +
+        `Запустите CLI из корня Astro-проекта или укажите --root.`
+      );
+    }
+    const astro = await import(pathToFileURL(astroEntry).href);
+
+    let capturedRoutes = null;
+
+    const capture = {
+      name: 'astro-routes-capture',
+      hooks: {
+        'astro:routes:resolved': ({ routes }) => {
+          if (capturedRoutes === null) {
+            capturedRoutes = routes;
+          }
+          throw new RoutesCaptured(routes);
+        },
       },
-    },
-  };
+    };
 
-  let devServer = null;
+    let devServer = null;
+
+    try {
+      if (useDev && typeof astro.dev === 'function') {
+        // Прерываем инициализацию dev-сервера сразу после route discovery
+        devServer = await astro.dev({
+          root,
+          integrations: [capture],
+          logLevel: 'silent',
+        });
+      } else {
+        // Прерываем build до content sync и build:start
+        await astro.build({
+          root,
+          integrations: [capture],
+          logLevel: 'silent',
+        });
+      }
+
+      return capturedRoutes ?? [];
+    } catch (error) {
+      if (error instanceof RoutesCaptured || error?.code === 'ASTRO_ROUTES_CAPTURED') {
+        return error.routes ?? capturedRoutes ?? [];
+      }
+      throw error;
+    } finally {
+      if (devServer && typeof devServer.stop === 'function') {
+        await devServer.stop().catch(() => {});
+      }
+    }
+  })();
 
   try {
-    if (useDev && typeof astro.dev === 'function') {
-      // Прерываем инициализацию dev-сервера сразу после route discovery
-      devServer = await astro.dev({
-        root: process.cwd(),
-        integrations: [capture],
-        logLevel: 'silent',
-      });
-    } else {
-      // Прерываем build до content sync и build:start
-      await astro.build({
-        root: process.cwd(),
-        integrations: [capture],
-        logLevel: 'silent',
-      });
-    }
-
-    return capturedRoutes ?? [];
-  } catch (error) {
-    if (error instanceof RoutesCaptured || error?.code === 'ASTRO_ROUTES_CAPTURED') {
-      return error.routes ?? capturedRoutes ?? [];
-    }
-    throw error;
+    // Promise.race сам вешает обработчик на collect, поэтому после таймаута
+    // поздний reject не станет unhandled rejection.
+    return await Promise.race([collect, timeout]);
   } finally {
-    if (devServer && typeof devServer.stop === 'function') {
-      await devServer.stop().catch(() => {});
-    }
+    clearTimeout(timer);
   }
 }
 
@@ -134,7 +224,7 @@ function outputJson(data, outputPath) {
   console.log(jsonString);
 }
 
-function outputTable(data) {
+function outputTable(data, { color = false } = {}) {
   const routes = data.filter(r => r.type !== 'redirect'); // NEW: редиректы выводим отдельно
   const redirects = data.filter(r => r.type === 'redirect'); // NEW
 
@@ -144,7 +234,7 @@ function outputTable(data) {
     const table = new Table({
       head: ['ROUTE', 'TYPE', 'MODE', 'ENTRYPOINT'],
       colWidths: [Math.min(maxRouteLength + 5, 60), 15, 10, Math.min(entryPointLength + 15, 60)],
-      style: { head: ['cyan'], border: ['grey'] },
+      style: color ? { head: ['cyan'], border: ['grey'] } : {},
     });
     routes.forEach(r => table.push([r.route, r.type, r.mode, r.entrypoint]));
     console.log('\n📋 Найденные маршруты:\n');
@@ -165,19 +255,47 @@ function outputTable(data) {
 
 // ---------- main ----------
 async function main() {
-  const opts = parseArgs(process.argv);
+  let opts;
+  try {
+    opts = parseArgs(process.argv);
+  } catch (error) {
+    console.error(`Ошибка аргументов: ${error.message}`);
+    console.error('Используйте --help для списка опций.');
+    process.exitCode = 1;
+    return;
+  }
 
   if (opts.help) {
     printHelp();
     return;
   }
 
+  if (opts.version) {
+    printVersion();
+    return;
+  }
+
+  let root;
+  try {
+    root = resolveRoot(opts.root);
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+    return;
+  }
+
   let routes;
   try {
-    routes = await collectRoutes({ useDev: opts.dev });
+    routes = await collectRoutes({ root, useDev: opts.dev, timeoutMs: opts.timeout });
   } catch (e) {
+    if (e?.code === 'ASTRO_ROUTES_TIMEOUT') {
+      // build/dev нельзя отменить снаружи — завершаем процесс принудительно
+      console.error(e.message);
+      process.exit(1);
+    }
     console.error('Ошибка при получении маршрутов:', e.message);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   // NEW: включаем редиректы в фильтрацию; по умолчанию только маршруты проекта
@@ -204,19 +322,28 @@ async function main() {
     return base;
   });
 
-  if (data.length === 0) {
-    if (opts.json) {
-      outputJson([], opts.output);
-    } else {
-      console.log('Маршруты не найдены.');
-    }
-    return;
-  }
+  const useColor = Boolean(process.stdout.isTTY)
+    && !opts.noColor
+    && process.env.NO_COLOR === undefined;
 
-  if (opts.json) {
-    outputJson(data, opts.output);
-  } else {
-    outputTable(data);
+  try {
+    if (data.length === 0) {
+      if (opts.json) {
+        outputJson([], opts.output);
+      } else {
+        console.log('Маршруты не найдены.');
+      }
+      return;
+    }
+
+    if (opts.json) {
+      outputJson(data, opts.output);
+    } else {
+      outputTable(data, { color: useColor });
+    }
+  } catch (error) {
+    console.error(`Не удалось записать результат: ${error.message}`);
+    process.exitCode = 1;
   }
 }
 
